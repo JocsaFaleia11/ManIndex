@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <link rel="icon" type="image/x-icon" href="logo.ico">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manhwa Reader</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+</head>
+<body>
+    <!-- Barra de progresso de leitura -->
+    <div id="readingProgress" class="reading-progress" style="width: 0%"></div>
+
+    <!-- Navbar -->
+    <nav class="navbar" id="mainNav">
+        <h1 class="logo">ManIndex</h1>
+        
+        <div class="nav-center">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Buscar manhwa..." aria-label="Buscar manhwa">
+            </div>
+        </div>
+
+        <div class="nav-right" id="authSection">
+            <button class="btn-login" onclick="app.openAuthModal()">Entrar</button>
+        </div>
+    </nav>
+
+    <!-- Modal de Auth -->
+    <div id="authModal" class="modal hidden">
+        <div class="modal-backdrop" onclick="app.closeAuthModal()"></div>
+        <div class="modal-content">
+            <button class="modal-close" onclick="app.closeAuthModal()" aria-label="Fechar modal de autenticação">×</button>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">Entrar</button>
+                <button class="auth-tab" data-tab="register">Criar Conta</button>
+            </div>
+
+            <div id="loginTab" class="auth-panel active">
+                <h2>Bem-vindo de volta! 👋</h2>
+                <p>Continue sua jornada de leitura</p>
+                
+                <form id="loginForm">
+                    <div class="input-group">
+                        <label for="loginEmail">Email</label>
+                        <input type="email" id="loginEmail" required placeholder="seu@email.com">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="loginPassword">Senha</label>
+                        <input type="password" id="loginPassword" required placeholder="••••••••">
+                    </div>
+
+                    <button type="submit" class="btn-primary">Entrar</button>
+                </form>
+
+                <div class="auth-divider">
+                    <span>ou</span>
+                </div>
+
+                <button id="googleLogin" class="btn-google">
+                    <img src="https://www.google.com/favicon.ico" alt="Google">
+                    Entrar com Google
+                </button>
+            </div>
+
+            <div id="registerTab" class="auth-panel">
+                <h2>Criar conta </h2>
+                <p>Comece a salvar seu progresso</p>
+                
+                <form id="registerForm">
+                    <div class="input-group">
+                        <label for="registerName">Nome</label>
+                        <input type="text" id="registerName" required placeholder="Seu nome">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="registerEmail">Email</label>
+                        <input type="email" id="registerEmail" required placeholder="seu@email.com">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="registerPassword">Senha</label>
+                        <input type="password" id="registerPassword" required placeholder="Mínimo 6 caracteres" minlength="6">
+                    </div>
+
+                    <button type="submit" class="btn-primary">Criar Conta</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <main class="container">
+        <!-- Continuar Lendo -->
+        <section id="continueReading" class="continue-section hidden">
+            <div class="section-header">
+                <h2> Continuar Lendo</h2>
+                <button id="clearHistory" class="btn-text-small">Limpar histórico</button>
+            </div>
+            <div id="continueGrid" class="continue-grid"></div>
+        </section>
+
+        <!-- Lista de Manhwas -->
+        <section id="manhwaList" class="manhwa-section">
+            <div class="section-header">
+                <h2>🔥 Todos as Obras</h2>
+                <div class="filter-tags">
+                    <button class="tag active" data-filter="all">Todos</button>
+                    <button class="tag" data-filter="action">Ação</button>
+                    <button class="tag" data-filter="romance">Romance</button>
+                    <button class="tag" data-filter="fantasy">Fantasia</button>
+                </div>
+            </div>
+            <div id="manhwaGrid" class="manhwa-grid">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <span>Carregando Obras...</span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal de Detalhes do Manhwa -->
+    <div id="manhwaModal" class="manhwa-modal hidden">
+        <div class="modal-overlay" onclick="app.closeManhwaModal()"></div>
+        
+        <div class="manhwa-modal-container">
+            <button class="modal-close-btn" onclick="app.closeManhwaModal()" aria-label="Fechar modal de detalhes do manhwa">×</button>
+            
+            <!-- Header com imagem de fundo -->
+            <div class="modal-header">
+                <div class="modal-backdrop-img">
+                    <img id="modalBackdrop" src="" alt="">
+                    <div class="modal-backdrop-gradient"></div>
+                </div>
+                
+                <div class="modal-header-content">
+                    <img id="modalCover" src="" alt="" class="modal-cover-img">
+                    
+                    <div class="modal-info">
+                        <h1 id="modalTitle" class="modal-title-text">Título do Manhwa</h1>
+                        
+                        <div class="modal-tags">
+                            <span id="modalGenre" class="tag-genre">Ação</span>
+                            <span id="modalStatus" class="tag-status">Em andamento</span>
+                            <span id="modalChapters" class="tag-chapters">0 capítulos</span>
+                        </div>
+
+                        <div class="modal-buttons">
+                            <button id="continueReadingBtn" class="btn-main" onclick="app.startReading()">
+                                ▶ Continuar Lendo
+                            </button>
+                            <button class="btn-secondary-main" onclick="app.readFromBeginning()">
+                                 Ler do Início
+                            </button>
+                            <button id="favoriteBtn" class="btn-fav" onclick="app.toggleModalFavorite()">
+                                ♡
+                            </button>
+                        </div>
+
+                        <p id="modalSynopsis" class="modal-description">
+                            Sinopse do manhwa...
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lista de Capítulos -->
+            <div class="modal-body">
+                <h3>Capítulos Disponíveis</h3>
+                
+                <div class="chapters-toolbar">
+                    <div class="search-chapter-box">
+                        <input type="text" id="searchChapter" placeholder="Buscar capítulo..." oninput="app.filterChapters()">
+                    </div>
+                    <select id="sortChapters" onchange="app.sortChapters()">
+                        <option value="newest">Mais recentes primeiro</option>
+                        <option value="oldest">Mais antigos primeiro</option>
+                    </select>
+                </div>
+
+                <div id="chaptersList" class="chapters-list-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reader -->
+    <section id="reader" class="reader hidden">
+        <div class="reader-header">
+            <button id="backBtn" class="btn-icon" title="Voltar">←</button>
+            
+            <div class="reader-title">
+                <h2 id="chapterTitle">Título do Capítulo</h2>
+                <span id="manhwaSubtitle">Nome do Manhwa</span>
+            </div>
+
+            <select id="chapterSelect" class="chapter-select">
+                <option>Capítulos</option>
+            </select>
+            
+            <button id="bookmarkBtn" class="btn-icon" title="Favoritar">♡</button>
+        </div>
+
+        <div id="pagesContainer" class="pages-container"></div>
+
+        <div class="reader-options">
+            <button id="themeToggle" class="option-btn" title="Alternar tema">🌓</button>
+            <button id="fitToggle" class="option-btn active" title="Ajustar à tela">⊘</button>
+            <button id="scrollTop" class="option-btn" title="Voltar ao topo">↑</button>
+        </div>
+
+        <div class="reader-nav">
+            <button id="prevChapter" class="nav-btn-reader">← Anterior</button>
+            <span id="pageIndicator" class="page-indicator">1 / 1</span>
+            <button id="nextChapter" class="nav-btn-reader">Próximo →</button>
+        </div>
+    </section>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="./js/firebase-config.js"></script>
+    <script src="./js/app.js"></script>
+</body>
+</html>
