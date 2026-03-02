@@ -14,5 +14,3 @@ Cresça conosco: Faça parte da fundação de uma ferramenta feita para valoriza
 🛠️ Roadmap de Desenvolvimento
 Concepção do ecossistema.
 Implementação da Base de Dados (Em progresso).
-Sistema de submissão para Scans parceiras.
-Filtros avançados por gênero e demografia.
