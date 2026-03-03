@@ -1032,6 +1032,8 @@ const userApp = {
         }
     },
 
+
+
     async logout() {
         await UserAuth.logout();
         this.updateUIAuth(false);

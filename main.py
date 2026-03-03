@@ -1,39 +1,58 @@
-import sys
+import webview
 import os
-from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineSettings
-from PyQt6.QtCore import QUrl
+import sys
+from google_auth_oauthlib.flow import InstalledAppFlow
 
-class AppModerno(QMainWindow):
+def resource_path(relative_path):
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+# Escopos do Google
+SCOPES = ['openid', 'https://www.googleapis.com', 'https://www.googleapis.com']
+
+class Api:
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("ManIndex")
-        self.resize(1200, 800)
+        self._window = None
 
-        # Criar o componente de navegação
-        self.browser = QWebEngineView()
-        
-        # Configurações para Web Moderna
-        settings = self.browser.settings()
-        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
+    def set_window(self, window):
+        self._window = window
 
-        # Caminho absoluto para o seu index.html
-        diretorio = os.path.dirname(os.path.abspath(__file__))
-        caminho_html = os.path.join(diretorio, "index.html")
-        
-        # Carrega o arquivo local
-        self.browser.setUrl(QUrl.fromLocalFile(caminho_html))
-        self.setCentralWidget(self.browser)
+    def login_google(self):
+        """Esta função será chamada pelo seu botão no HTML"""
+        try:
+            caminho_json = resource_path('client_secrets.json')
+            flow = InstalledAppFlow.from_client_secrets_file(caminho_json, scopes=SCOPES)
+            
+            # Abre o navegador externo e aguarda o token
+            creds = flow.run_local_server(port=0)
+            
+            # Retorna os dados do usuário para o seu HTML/JavaScript
+            user_data = {
+                "token": creds.token,
+                "id_token": creds.id_token
+            }
+            return user_data
+        except Exception as e:
+            return {"error": str(e)}
 
-if __name__ == "__main__":
-    # Necessário para algumas renderizações modernas em GPUs específicas
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-web-security" 
+def iniciar_app():
+    api = Api()
+    window = webview.create_window(
+        "Meu App Executável", 
+        resource_path("index.html"),
+        js_api=api, # Importante: conecta o JS com o Python
+        width=1000,
+        height=700
+    )
+    api.set_window(window)
     
-    app = QApplication(sys.argv)
-    janela = AppModerno()
-    janela.show()
-    sys.exit(app.exec())
+    webview.start(
+        http_server=True,
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    )
+
+if __name__ == '__main__':
+    iniciar_app()
