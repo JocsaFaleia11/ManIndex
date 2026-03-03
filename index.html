@@ -4,7 +4,7 @@
     <link rel="icon" type="image/x-icon" href="logo.ico">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manhwa Reader</title>
+    <title>ManIndex - Leitor de Mangás, Manhwas e Manhuas</title>
     <link rel="stylesheet" href="./css/style.css">
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -17,28 +17,156 @@
 
     <!-- Navbar -->
     <nav class="navbar" id="mainNav">
-        <h1 class="logo">ManIndex</h1>
+        <div class="nav-left">
+            <button class="menu-toggle" id="menuToggle" type="button" aria-label="Abrir menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <h1 class="logo">Man<span>Index</span></h1>
+        </div>
         
         <div class="nav-center">
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Buscar manhwa..." aria-label="Buscar manhwa">
+                <input type="text" id="searchInput" placeholder="Buscar obras..." aria-label="Buscar obras">
             </div>
         </div>
 
         <div class="nav-right" id="authSection">
-            <button class="btn-login" onclick="app.openAuthModal()">Entrar</button>
+            <button class="btn-login" type="button" onclick="app.openAuthModal()">Entrar</button>
         </div>
     </nav>
 
+    <!-- Sidebar de Categorias -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h3>Navegação</h3>
+            <button class="close-sidebar" type="button" onclick="app.toggleSidebar()" aria-label="Fechar menu">×</button>
+        </div>
+        
+        <div class="sidebar-content">
+            <!-- Tipos de Obra -->
+            <div class="nav-section">
+                <h4>📚 Tipo de Obra</h4>
+                <div class="nav-items">
+                    <button class="nav-item active" type="button" data-type="all">
+                        <span class="nav-icon">📖</span>
+                        <span>Todos</span>
+                        <span class="nav-count" id="count-all">0</span>
+                    </button>
+                    <button class="nav-item" type="button" data-type="manga">
+                        <span class="nav-icon">🇯🇵</span>
+                        <span>Mangá</span>
+                        <span class="nav-count" id="count-manga">0</span>
+                    </button>
+                    <button class="nav-item" type="button" data-type="manhwa">
+                        <span class="nav-icon">🇰🇷</span>
+                        <span>Manhwa</span>
+                        <span class="nav-count" id="count-manhwa">0</span>
+                    </button>
+                    <button class="nav-item" type="button" data-type="manhua">
+                        <span class="nav-icon">🇨🇳</span>
+                        <span>Manhua</span>
+                        <span class="nav-count" id="count-manhua">0</span>
+                    </button>
+                    <button class="nav-item" type="button" data-type="webtoon">
+                        <span class="nav-icon">📱</span>
+                        <span>Webtoon</span>
+                        <span class="nav-count" id="count-webtoon">0</span>
+                    </button>
+                    <button class="nav-item" type="button" data-type="novel">
+                        <span class="nav-icon">📕</span>
+                        <span>Light Novel</span>
+                        <span class="nav-count" id="count-novel">0</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status -->
+            <div class="nav-section">
+                <h4>📊 Status</h4>
+                <div class="nav-items">
+                    <button class="nav-item" type="button" data-status="ongoing">
+                        <span class="nav-icon">🟢</span>
+                        <span>Em Andamento</span>
+                    </button>
+                    <button class="nav-item" type="button" data-status="completed">
+                        <span class="nav-icon">✅</span>
+                        <span>Completo</span>
+                    </button>
+                    <button class="nav-item" type="button" data-status="hiatus">
+                        <span class="nav-icon">⏸️</span>
+                        <span>Hiato</span>
+                    </button>
+                    <button class="nav-item" type="button" data-status="cancelled">
+                        <span class="nav-icon">❌</span>
+                        <span>Cancelado</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Demografia -->
+            <div class="nav-section">
+                <h4>👥 Demografia</h4>
+                <div class="nav-items">
+                    <button class="nav-item" type="button" data-demo="shounen">
+                        <span class="nav-icon">👦</span>
+                        <span>Shounen</span>
+                    </button>
+                    <button class="nav-item" type="button" data-demo="shoujo">
+                        <span class="nav-icon">👧</span>
+                        <span>Shoujo</span>
+                    </button>
+                    <button class="nav-item" type="button" data-demo="seinen">
+                        <span class="nav-icon">👨</span>
+                        <span>Seinen</span>
+                    </button>
+                    <button class="nav-item" type="button" data-demo="josei">
+                        <span class="nav-icon">👩</span>
+                        <span>Josei</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Gêneros -->
+            <div class="nav-section">
+                <h4>🏷️ Gêneros</h4>
+                <div class="genre-cloud">
+                    <button class="genre-tag" type="button" data-genre="action">Ação</button>
+                    <button class="genre-tag" type="button" data-genre="adventure">Aventura</button>
+                    <button class="genre-tag" type="button" data-genre="comedy">Comédia</button>
+                    <button class="genre-tag" type="button" data-genre="drama">Drama</button>
+                    <button class="genre-tag" type="button" data-genre="fantasy">Fantasia</button>
+                    <button class="genre-tag" type="button" data-genre="harem">Harem</button>
+                    <button class="genre-tag" type="button" data-genre="isekai">Isekai</button>
+                    <button class="genre-tag" type="button" data-genre="martial">Artes Marciais</button>
+                    <button class="genre-tag" type="button" data-genre="mystery">Mistério</button>
+                    <button class="genre-tag" type="button" data-genre="psychological">Psicológico</button>
+                    <button class="genre-tag" type="button" data-genre="romance">Romance</button>
+                    <button class="genre-tag" type="button" data-genre="school">Vida Escolar</button>
+                    <button class="genre-tag" type="button" data-genre="sci-fi">Sci-Fi</button>
+                    <button class="genre-tag" type="button" data-genre="slice">Slice of Life</button>
+                    <button class="genre-tag" type="button" data-genre="sports">Esportes</button>
+                    <button class="genre-tag" type="button" data-genre="supernatural">Sobrenatural</button>
+                    <button class="genre-tag" type="button" data-genre="thriller">Thriller</button>
+                    <button class="genre-tag" type="button" data-genre="horror">Terror</button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Overlay para mobile -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
     <!-- Modal de Auth -->
     <div id="authModal" class="modal hidden">
-        <div class="modal-backdrop" onclick="app.closeAuthModal()"></div>
+        <div class="modal-backdrop"></div>
         <div class="modal-content">
-            <button class="modal-close" onclick="app.closeAuthModal()" aria-label="Fechar modal de autenticação">×</button>
+            <button class="modal-close" type="button" onclick="app.closeAuthModal()" aria-label="Fechar">×</button>
             
             <div class="auth-tabs">
-                <button class="auth-tab active" data-tab="login">Entrar</button>
-                <button class="auth-tab" data-tab="register">Criar Conta</button>
+                <button class="auth-tab active" type="button" data-tab="login">Entrar</button>
+                <button class="auth-tab" type="button" data-tab="register">Criar Conta</button>
             </div>
 
             <div id="loginTab" class="auth-panel active">
@@ -63,14 +191,14 @@
                     <span>ou</span>
                 </div>
 
-                <button id="googleLogin" class="btn-google">
+                <button type="button" id="googleLogin" class="btn-google">
                     <img src="https://www.google.com/favicon.ico" alt="Google">
                     Entrar com Google
                 </button>
             </div>
 
             <div id="registerTab" class="auth-panel">
-                <h2>Criar conta </h2>
+                <h2>Criar conta</h2>
                 <p>Comece a salvar seu progresso</p>
                 
                 <form id="registerForm">
@@ -99,40 +227,62 @@
         <!-- Continuar Lendo -->
         <section id="continueReading" class="continue-section hidden">
             <div class="section-header">
-                <h2> Continuar Lendo</h2>
-                <button id="clearHistory" class="btn-text-small">Limpar histórico</button>
+                <h2>📖 Continuar Lendo</h2>
+                <button type="button" id="clearHistory" class="btn-text-small">Limpar histórico</button>
             </div>
             <div id="continueGrid" class="continue-grid"></div>
         </section>
 
-        <!-- Lista de Manhwas -->
+        <!-- Lista de Obras -->
         <section id="manhwaList" class="manhwa-section">
             <div class="section-header">
-                <h2>🔥 Todos as Obras</h2>
-                <div class="filter-tags">
-                    <button class="tag active" data-filter="all">Todos</button>
-                    <button class="tag" data-filter="action">Ação</button>
-                    <button class="tag" data-filter="romance">Romance</button>
-                    <button class="tag" data-filter="fantasy">Fantasia</button>
+                <div class="header-left">
+                    <h2 id="sectionTitle">🔥 Todas as Obras</h2>
+                    <span class="results-count" id="resultsCount"></span>
+                </div>
+                
+                <div class="header-controls">
+                    <!-- Filtros Ativos -->
+                    <div class="active-filters" id="activeFilters"></div>
+                    
+                    <!-- Ordenação -->
+                    <div class="sort-dropdown">
+                        <select id="sortSelect">
+                            <option value="newest">📅 Mais Recentes</option>
+                            <option value="updated">🔄 Atualizados</option>
+                            <option value="popular">🔥 Populares</option>
+                            <option value="rating">⭐ Melhor Avaliados</option>
+                            <option value="alpha">🔤 Alfabética</option>
+                            <option value="chapters">📚 Mais Capítulos</option>
+                        </select>
+                    </div>
                 </div>
             </div>
+
+            <!-- Grid de Obras -->
             <div id="manhwaGrid" class="manhwa-grid">
                 <div class="loading">
                     <div class="spinner"></div>
                     <span>Carregando Obras...</span>
                 </div>
             </div>
+
+            <!-- Paginação -->
+            <div class="pagination" id="pagination">
+                <button type="button" class="page-btn" id="prevPage" onclick="app.changePage(-1)">← Anterior</button>
+                <div class="page-numbers" id="pageNumbers"></div>
+                <button type="button" class="page-btn" id="nextPage" onclick="app.changePage(1)">Próximo →</button>
+            </div>
         </section>
     </main>
 
-    <!-- Modal de Detalhes do Manhwa -->
+    <!-- Modal de Detalhes -->
     <div id="manhwaModal" class="manhwa-modal hidden">
         <div class="modal-overlay" onclick="app.closeManhwaModal()"></div>
         
         <div class="manhwa-modal-container">
-            <button class="modal-close-btn" onclick="app.closeManhwaModal()" aria-label="Fechar modal de detalhes do manhwa">×</button>
+            <button type="button" class="modal-close-btn" onclick="app.closeManhwaModal()" aria-label="Fechar">×</button>
             
-            <!-- Header com imagem de fundo -->
             <div class="modal-header">
                 <div class="modal-backdrop-img">
                     <img id="modalBackdrop" src="" alt="">
@@ -143,44 +293,68 @@
                     <img id="modalCover" src="" alt="" class="modal-cover-img">
                     
                     <div class="modal-info">
-                        <h1 id="modalTitle" class="modal-title-text">Título do Manhwa</h1>
+                        <div class="modal-badges">
+                            <span id="modalType" class="badge-type">Mangá</span>
+                            <span id="modalStatus" class="badge-status">Em andamento</span>
+                            <span id="modalDemo" class="badge-demo">Shounen</span>
+                        </div>
                         
-                        <div class="modal-tags">
-                            <span id="modalGenre" class="tag-genre">Ação</span>
-                            <span id="modalStatus" class="tag-status">Em andamento</span>
-                            <span id="modalChapters" class="tag-chapters">0 capítulos</span>
+                        <h1 id="modalTitle" class="modal-title-text">Título</h1>
+                        
+                        <div class="modal-meta">
+                            <span id="modalAuthor">Autor</span>
+                            <span>•</span>
+                            <span id="modalYear">2024</span>
+                            <span>•</span>
+                            <span id="modalChapters">0 capítulos</span>
                         </div>
 
+                        <div class="modal-tags" id="modalTags"></div>
+
                         <div class="modal-buttons">
-                            <button id="continueReadingBtn" class="btn-main" onclick="app.startReading()">
-                                ▶ Continuar Lendo
+                            <button type="button" id="continueReadingBtn" class="btn-main" onclick="app.startReading()">
+                                ▶ Continuar
                             </button>
-                            <button class="btn-secondary-main" onclick="app.readFromBeginning()">
-                                 Ler do Início
+                            <button type="button" class="btn-secondary-main" onclick="app.readFromBeginning()">
+                                📖 Ler do Início
                             </button>
-                            <button id="favoriteBtn" class="btn-fav" onclick="app.toggleModalFavorite()">
+                            <button type="button" id="favoriteBtn" class="btn-fav" onclick="app.toggleModalFavorite()">
                                 ♡
                             </button>
                         </div>
 
+                        <div class="modal-stats">
+                            <div class="stat">
+                                <span class="stat-value" id="modalRating">⭐ 4.5</span>
+                                <span class="stat-label">Avaliação</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-value" id="modalViews">👁️ 10K</span>
+                                <span class="stat-label">Visualizações</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-value" id="modalUpdated">📅 Hoje</span>
+                                <span class="stat-label">Atualizado</span>
+                            </div>
+                        </div>
+
                         <p id="modalSynopsis" class="modal-description">
-                            Sinopse do manhwa...
+                            Sinopse...
                         </p>
                     </div>
                 </div>
             </div>
 
-            <!-- Lista de Capítulos -->
             <div class="modal-body">
-                <h3>Capítulos Disponíveis</h3>
+                <h3>📑 Capítulos Disponíveis</h3>
                 
                 <div class="chapters-toolbar">
                     <div class="search-chapter-box">
                         <input type="text" id="searchChapter" placeholder="Buscar capítulo..." oninput="app.filterChapters()">
                     </div>
                     <select id="sortChapters" onchange="app.sortChapters()">
-                        <option value="newest">Mais recentes primeiro</option>
-                        <option value="oldest">Mais antigos primeiro</option>
+                        <option value="newest">Mais recentes</option>
+                        <option value="oldest">Mais antigos</option>
                     </select>
                 </div>
 
@@ -192,7 +366,7 @@
     <!-- Reader -->
     <section id="reader" class="reader hidden">
         <div class="reader-header">
-            <button id="backBtn" class="btn-icon" title="Voltar">←</button>
+            <button type="button" id="backBtn" class="btn-icon" title="Voltar">←</button>
             
             <div class="reader-title">
                 <h2 id="chapterTitle">Título do Capítulo</h2>
@@ -203,21 +377,21 @@
                 <option>Capítulos</option>
             </select>
             
-            <button id="bookmarkBtn" class="btn-icon" title="Favoritar">♡</button>
+            <button type="button" id="bookmarkBtn" class="btn-icon" title="Favoritar">♡</button>
         </div>
 
         <div id="pagesContainer" class="pages-container"></div>
 
         <div class="reader-options">
-            <button id="themeToggle" class="option-btn" title="Alternar tema">🌓</button>
-            <button id="fitToggle" class="option-btn active" title="Ajustar à tela">⊘</button>
-            <button id="scrollTop" class="option-btn" title="Voltar ao topo">↑</button>
+            <button type="button" id="themeToggle" class="option-btn" title="Alternar tema">🌓</button>
+            <button type="button" id="fitToggle" class="option-btn active" title="Ajustar à tela">⊘</button>
+            <button type="button" id="scrollTop" class="option-btn" title="Voltar ao topo">↑</button>
         </div>
 
         <div class="reader-nav">
-            <button id="prevChapter" class="nav-btn-reader">← Anterior</button>
+            <button type="button" id="prevChapter" class="nav-btn-reader">← Anterior</button>
             <span id="pageIndicator" class="page-indicator">1 / 1</span>
-            <button id="nextChapter" class="nav-btn-reader">Próximo →</button>
+            <button type="button" id="nextChapter" class="nav-btn-reader">Próximo →</button>
         </div>
     </section>
 
