@@ -1,404 +1,357 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <link rel="icon" type="image/x-icon" href="logo.ico">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ManIndex - Leitor de Mangás, Manhwas e Manhuas</title>
-    <link rel="stylesheet" href="./css/style.css">
-    <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <title>ManIndex - Explore Mangás, Manhwas e Manhuas</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
-    <!-- Barra de progresso de leitura -->
-    <div id="readingProgress" class="reading-progress" style="width: 0%"></div>
+    <!-- Loading -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p>Carregando...</p>
+    </div>
 
-    <!-- Navbar -->
-    <nav class="navbar" id="mainNav">
-        <div class="nav-left">
-            <button class="menu-toggle" id="menuToggle" type="button" aria-label="Abrir menu">
-                <span></span>
-                <span></span>
-                <span></span>
-            </button>
-            <h1 class="logo">Man<span>Index</span></h1>
-        </div>
-        
-        <div class="nav-center">
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Buscar obras..." aria-label="Buscar obras">
-            </div>
-        </div>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
 
-        <div class="nav-right" id="authSection">
-            <button class="btn-login" type="button" onclick="app.openAuthModal()">Entrar</button>
-        </div>
-    </nav>
-
-    <!-- Sidebar de Categorias -->
-    <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <h3>Navegação</h3>
-            <button class="close-sidebar" type="button" onclick="app.toggleSidebar()" aria-label="Fechar menu">×</button>
-        </div>
-        
-        <div class="sidebar-content">
-            <!-- Tipos de Obra -->
-            <div class="nav-section">
-                <h4>📚 Tipo de Obra</h4>
-                <div class="nav-items">
-                    <button class="nav-item active" type="button" data-type="all">
-                        <span class="nav-icon">📖</span>
-                        <span>Todos</span>
-                        <span class="nav-count" id="count-all">0</span>
-                    </button>
-                    <button class="nav-item" type="button" data-type="manga">
-                        <span class="nav-icon">🇯🇵</span>
-                        <span>Mangá</span>
-                        <span class="nav-count" id="count-manga">0</span>
-                    </button>
-                    <button class="nav-item" type="button" data-type="manhwa">
-                        <span class="nav-icon">🇰🇷</span>
-                        <span>Manhwa</span>
-                        <span class="nav-count" id="count-manhwa">0</span>
-                    </button>
-                    <button class="nav-item" type="button" data-type="manhua">
-                        <span class="nav-icon">🇨🇳</span>
-                        <span>Manhua</span>
-                        <span class="nav-count" id="count-manhua">0</span>
-                    </button>
-                    <button class="nav-item" type="button" data-type="webtoon">
-                        <span class="nav-icon">📱</span>
-                        <span>Webtoon</span>
-                        <span class="nav-count" id="count-webtoon">0</span>
-                    </button>
-                    <button class="nav-item" type="button" data-type="novel">
-                        <span class="nav-icon">📕</span>
-                        <span>Light Novel</span>
-                        <span class="nav-count" id="count-novel">0</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Status -->
-            <div class="nav-section">
-                <h4>📊 Status</h4>
-                <div class="nav-items">
-                    <button class="nav-item" type="button" data-status="ongoing">
-                        <span class="nav-icon">🟢</span>
-                        <span>Em Andamento</span>
-                    </button>
-                    <button class="nav-item" type="button" data-status="completed">
-                        <span class="nav-icon">✅</span>
-                        <span>Completo</span>
-                    </button>
-                    <button class="nav-item" type="button" data-status="hiatus">
-                        <span class="nav-icon">⏸️</span>
-                        <span>Hiato</span>
-                    </button>
-                    <button class="nav-item" type="button" data-status="cancelled">
-                        <span class="nav-icon">❌</span>
-                        <span>Cancelado</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Demografia -->
-            <div class="nav-section">
-                <h4>👥 Demografia</h4>
-                <div class="nav-items">
-                    <button class="nav-item" type="button" data-demo="shounen">
-                        <span class="nav-icon">👦</span>
-                        <span>Shounen</span>
-                    </button>
-                    <button class="nav-item" type="button" data-demo="shoujo">
-                        <span class="nav-icon">👧</span>
-                        <span>Shoujo</span>
-                    </button>
-                    <button class="nav-item" type="button" data-demo="seinen">
-                        <span class="nav-icon">👨</span>
-                        <span>Seinen</span>
-                    </button>
-                    <button class="nav-item" type="button" data-demo="josei">
-                        <span class="nav-icon">👩</span>
-                        <span>Josei</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Gêneros -->
-            <div class="nav-section">
-                <h4>🏷️ Gêneros</h4>
-                <div class="genre-cloud">
-                    <button class="genre-tag" type="button" data-genre="action">Ação</button>
-                    <button class="genre-tag" type="button" data-genre="adventure">Aventura</button>
-                    <button class="genre-tag" type="button" data-genre="comedy">Comédia</button>
-                    <button class="genre-tag" type="button" data-genre="drama">Drama</button>
-                    <button class="genre-tag" type="button" data-genre="fantasy">Fantasia</button>
-                    <button class="genre-tag" type="button" data-genre="harem">Harem</button>
-                    <button class="genre-tag" type="button" data-genre="isekai">Isekai</button>
-                    <button class="genre-tag" type="button" data-genre="martial">Artes Marciais</button>
-                    <button class="genre-tag" type="button" data-genre="mystery">Mistério</button>
-                    <button class="genre-tag" type="button" data-genre="psychological">Psicológico</button>
-                    <button class="genre-tag" type="button" data-genre="romance">Romance</button>
-                    <button class="genre-tag" type="button" data-genre="school">Vida Escolar</button>
-                    <button class="genre-tag" type="button" data-genre="sci-fi">Sci-Fi</button>
-                    <button class="genre-tag" type="button" data-genre="slice">Slice of Life</button>
-                    <button class="genre-tag" type="button" data-genre="sports">Esportes</button>
-                    <button class="genre-tag" type="button" data-genre="supernatural">Sobrenatural</button>
-                    <button class="genre-tag" type="button" data-genre="thriller">Thriller</button>
-                    <button class="genre-tag" type="button" data-genre="horror">Terror</button>
-                </div>
-            </div>
-        </div>
-    </aside>
-
-    <!-- Overlay para mobile -->
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
-    <!-- Modal de Auth -->
+    <!-- Modal de Login -->
     <div id="authModal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content">
-            <button class="modal-close" type="button" onclick="app.closeAuthModal()" aria-label="Fechar">×</button>
-            
+        <div class="modal-content auth-modal-content">
             <div class="auth-tabs">
-                <button class="auth-tab active" type="button" data-tab="login">Entrar</button>
-                <button class="auth-tab" type="button" data-tab="register">Criar Conta</button>
+                <button class="auth-tab active" onclick="userApp.switchAuthTab('login')">Entrar</button>
+                <button class="auth-tab" onclick="userApp.switchAuthTab('register')">Criar Conta</button>
             </div>
-
-            <div id="loginTab" class="auth-panel active">
-                <h2>Bem-vindo de volta! 👋</h2>
-                <p>Continue sua jornada de leitura</p>
-                
-                <form id="loginForm">
-                    <div class="input-group">
-                        <label for="loginEmail">Email</label>
-                        <input type="email" id="loginEmail" required placeholder="seu@email.com">
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="loginPassword">Senha</label>
-                        <input type="password" id="loginPassword" required placeholder="••••••••">
-                    </div>
-
-                    <button type="submit" class="btn-primary">Entrar</button>
-                </form>
-
+            
+            <!-- Login Form -->
+            <form id="loginForm" class="auth-form">
+                <h3>Bem-vindo de volta!</h3>
+                <div class="input-group">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" id="loginEmail" placeholder="Email" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="loginPassword" placeholder="Senha" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">
+                    <i class="fas fa-sign-in-alt"></i> Entrar
+                </button>
                 <div class="auth-divider">
                     <span>ou</span>
                 </div>
-
-                <button type="button" id="googleLogin" class="btn-google">
-                    <img src="https://www.google.com/favicon.ico" alt="Google">
-                    Entrar com Google
+                <button type="button" class="btn btn-google btn-full" onclick="userApp.loginWithGoogle()">
+                    <i class="fab fa-google"></i> Entrar com Google
                 </button>
-            </div>
+            </form>
 
-            <div id="registerTab" class="auth-panel">
-                <h2>Criar conta</h2>
-                <p>Comece a salvar seu progresso</p>
-                
-                <form id="registerForm">
-                    <div class="input-group">
-                        <label for="registerName">Nome</label>
-                        <input type="text" id="registerName" required placeholder="Seu nome">
-                    </div>
+            <!-- Register Form -->
+            <form id="registerForm" class="auth-form hidden">
+                <h3>Criar nova conta</h3>
+                <div class="input-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="regName" placeholder="Nome de usuário" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" id="regEmail" placeholder="Email" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="regPassword" placeholder="Senha (mín. 6 caracteres)" required minlength="6">
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">
+                    <i class="fas fa-user-plus"></i> Criar Conta
+                </button>
+            </form>
 
-                    <div class="input-group">
-                        <label for="registerEmail">Email</label>
-                        <input type="email" id="registerEmail" required placeholder="seu@email.com">
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="registerPassword">Senha</label>
-                        <input type="password" id="registerPassword" required placeholder="Mínimo 6 caracteres" minlength="6">
-                    </div>
-
-                    <button type="submit" class="btn-primary">Criar Conta</button>
-                </form>
-            </div>
+            <button class="btn btn-text btn-close-modal" onclick="userApp.closeAuthModal()">
+                <i class="fas fa-times"></i> Fechar
+            </button>
         </div>
     </div>
 
-    <main class="container">
-        <!-- Continuar Lendo -->
-        <section id="continueReading" class="continue-section hidden">
-            <div class="section-header">
-                <h2>📖 Continuar Lendo</h2>
-                <button type="button" id="clearHistory" class="btn-text-small">Limpar histórico</button>
+    <!-- Header -->
+    <header class="main-header">
+        <div class="header-container">
+            <div class="logo">
+                <i class="fas fa-book-open"></i>
+                <h1>ManIndex</h1>
             </div>
-            <div id="continueGrid" class="continue-grid"></div>
-        </section>
+            
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="Buscar obras, autores, gêneros...">
+            </div>
 
-        <!-- Lista de Obras -->
-        <section id="manhwaList" class="manhwa-section">
-            <div class="section-header">
-                <div class="header-left">
-                    <h2 id="sectionTitle">🔥 Todas as Obras</h2>
-                    <span class="results-count" id="resultsCount"></span>
+            <div class="header-actions">
+                <!-- Usuário não logado -->
+                <div id="guestActions">
+                    <button class="btn btn-primary" onclick="userApp.openAuthModal()">
+                        <i class="fas fa-sign-in-alt"></i> Entrar
+                    </button>
                 </div>
+
+                <!-- Usuário logado -->
+                <div id="userActions" class="hidden">
+                    <div class="user-menu">
+                        <button class="btn btn-icon" onclick="userApp.toggleUserMenu()" id="userMenuBtn">
+                            <i class="fas fa-user-circle"></i>
+                            <span id="userDisplayName">Usuário</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                        <div id="userDropdown" class="dropdown-menu hidden">
+                            <a href="#" onclick="userApp.showMinhasObras(); return false;">
+                                <i class="fas fa-bookmark"></i> Minhas Obras
+                            </a>
+                            <a href="#" onclick="userApp.showHistorico(); return false;">
+                                <i class="fas fa-history"></i> Histórico
+                            </a>
+                            <div class="dropdown-divider"></div>
+                            <a href="#" onclick="userApp.logout(); return false;" class="text-danger">
+                                <i class="fas fa-sign-out-alt"></i> Sair
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="mobileMenuBtn" class="btn btn-icon mobile-only">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navegação por Tipo -->
+    <nav class="type-nav">
+        <div class="nav-container">
+            <button class="type-btn active" data-type="todos">
+                <i class="fas fa-th-large"></i> Todos
+            </button>
+            <button class="type-btn" data-type="Mangá">
+                <i class="fas fa-book"></i> Mangás
+            </button>
+            <button class="type-btn" data-type="Manhwa">
+                <i class="fas fa-book-open"></i> Manhwas
+            </button>
+            <button class="type-btn" data-type="Manhua">
+                <i class="fas fa-scroll"></i> Manhuas
+            </button>
+            <button class="type-btn" data-type="Webtoon">
+                <i class="fas fa-mobile-alt"></i> Webtoons
+            </button>
+        </div>
+    </nav>
+
+    <!-- Seção Minhas Obras (visível apenas para logados) -->
+    <section id="minhasObrasSection" class="user-section hidden">
+        <div class="section-header">
+            <h2><i class="fas fa-bookmark"></i> Minhas Obras</h2>
+            <button class="btn btn-text" onclick="userApp.hideMinhasObras()">
+                <i class="fas fa-times"></i> Fechar
+            </button>
+        </div>
+        <div id="minhasObrasGrid" class="obras-grid">
+            <!-- Obras em progresso -->
+        </div>
+    </section>
+
+    <!-- Seção Histórico (visível apenas para logados) -->
+    <section id="historicoSection" class="user-section hidden">
+        <div class="section-header">
+            <h2><i class="fas fa-history"></i> Histórico de Leitura</h2>
+            <button class="btn btn-text" onclick="userApp.hideHistorico()">
+                <i class="fas fa-times"></i> Fechar
+            </button>
+        </div>
+        <div id="historicoList" class="historico-list">
+            <!-- Histórico -->
+        </div>
+    </section>
+
+    <!-- Layout Principal -->
+    <div class="main-layout" id="mainLayout">
+        <!-- Sidebar de Filtros -->
+        <aside class="filters-sidebar" id="filtersSidebar">
+            <div class="filter-section">
+                <h3><i class="fas fa-filter"></i> Filtros</h3>
                 
-                <div class="header-controls">
-                    <!-- Filtros Ativos -->
-                    <div class="active-filters" id="activeFilters"></div>
-                    
-                    <!-- Ordenação -->
-                    <div class="sort-dropdown">
+                <div class="filter-group">
+                    <h4>Gêneros</h4>
+                    <div id="generosList" class="filter-list">
+                        <div class="loading-small">Carregando...</div>
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <h4>Autores/Scans</h4>
+                    <div id="autoresList" class="filter-list">
+                        <div class="loading-small">Carregando...</div>
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <h4>Status</h4>
+                    <div class="filter-list">
+                        <label class="filter-checkbox">
+                            <input type="checkbox" value="Em andamento" checked>
+                            <span>Em andamento</span>
+                        </label>
+                        <label class="filter-checkbox">
+                            <input type="checkbox" value="Completo" checked>
+                            <span>Completo</span>
+                        </label>
+                        <label class="filter-checkbox">
+                            <input type="checkbox" value="Hiato" checked>
+                            <span>Hiato</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button id="clearFilters" class="btn btn-secondary btn-small">
+                    <i class="fas fa-times"></i> Limpar Filtros
+                </button>
+            </div>
+        </aside>
+
+        <!-- Overlay mobile -->
+        <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+        <!-- Conteúdo Principal -->
+        <main class="content-area">
+            <div class="content-header">
+                <div class="breadcrumbs" id="breadcrumbs">
+                    <span class="active">Todas as Obras</span>
+                </div>
+                <div class="results-info">
+                    <span id="resultsCount">0 obras encontradas</span>
+                    <div class="sort-box">
                         <select id="sortSelect">
-                            <option value="newest">📅 Mais Recentes</option>
-                            <option value="updated">🔄 Atualizados</option>
-                            <option value="popular">🔥 Populares</option>
-                            <option value="rating">⭐ Melhor Avaliados</option>
-                            <option value="alpha">🔤 Alfabética</option>
-                            <option value="chapters">📚 Mais Capítulos</option>
+                            <option value="recentes">Mais recentes</option>
+                            <option value="az">A-Z</option>
+                            <option value="za">Z-A</option>
+                            <option value="capitulos">Mais capítulos</option>
                         </select>
                     </div>
                 </div>
             </div>
 
-            <!-- Grid de Obras -->
-            <div id="manhwaGrid" class="manhwa-grid">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <span>Carregando Obras...</span>
-                </div>
+            <div id="obrasGrid" class="obras-grid">
+                <!-- Obras -->
             </div>
 
-            <!-- Paginação -->
             <div class="pagination" id="pagination">
-                <button type="button" class="page-btn" id="prevPage" onclick="app.changePage(-1)">← Anterior</button>
-                <div class="page-numbers" id="pageNumbers"></div>
-                <button type="button" class="page-btn" id="nextPage" onclick="app.changePage(1)">Próximo →</button>
+                <button class="btn btn-secondary" id="prevPage" disabled>
+                    <i class="fas fa-chevron-left"></i> Anterior
+                </button>
+                <span id="pageInfo">Página 1</span>
+                <button class="btn btn-secondary" id="nextPage">
+                    Próxima <i class="fas fa-chevron-right"></i>
+                </button>
             </div>
-        </section>
-    </main>
+        </main>
+    </div>
 
-    <!-- Modal de Detalhes -->
-    <div id="manhwaModal" class="manhwa-modal hidden">
-        <div class="modal-overlay" onclick="app.closeManhwaModal()"></div>
-        
-        <div class="manhwa-modal-container">
-            <button type="button" class="modal-close-btn" onclick="app.closeManhwaModal()" aria-label="Fechar">×</button>
-            
+    <!-- Modal de Detalhes da Obra -->
+    <div id="obraModal" class="modal hidden">
+        <div class="modal-content modal-large">
             <div class="modal-header">
-                <div class="modal-backdrop-img">
-                    <img id="modalBackdrop" src="" alt="">
-                    <div class="modal-backdrop-gradient"></div>
-                </div>
-                
-                <div class="modal-header-content">
-                    <img id="modalCover" src="" alt="" class="modal-cover-img">
-                    
-                    <div class="modal-info">
-                        <div class="modal-badges">
-                            <span id="modalType" class="badge-type">Mangá</span>
-                            <span id="modalStatus" class="badge-status">Em andamento</span>
-                            <span id="modalDemo" class="badge-demo">Shounen</span>
-                        </div>
-                        
-                        <h1 id="modalTitle" class="modal-title-text">Título</h1>
-                        
-                        <div class="modal-meta">
-                            <span id="modalAuthor">Autor</span>
-                            <span>•</span>
-                            <span id="modalYear">2024</span>
-                            <span>•</span>
-                            <span id="modalChapters">0 capítulos</span>
-                        </div>
-
-                        <div class="modal-tags" id="modalTags"></div>
-
-                        <div class="modal-buttons">
-                            <button type="button" id="continueReadingBtn" class="btn-main" onclick="app.startReading()">
-                                ▶ Continuar
-                            </button>
-                            <button type="button" class="btn-secondary-main" onclick="app.readFromBeginning()">
-                                📖 Ler do Início
-                            </button>
-                            <button type="button" id="favoriteBtn" class="btn-fav" onclick="app.toggleModalFavorite()">
-                                ♡
-                            </button>
-                        </div>
-
-                        <div class="modal-stats">
-                            <div class="stat">
-                                <span class="stat-value" id="modalRating">⭐ 4.5</span>
-                                <span class="stat-label">Avaliação</span>
-                            </div>
-                            <div class="stat">
-                                <span class="stat-value" id="modalViews">👁️ 10K</span>
-                                <span class="stat-label">Visualizações</span>
-                            </div>
-                            <div class="stat">
-                                <span class="stat-value" id="modalUpdated">📅 Hoje</span>
-                                <span class="stat-label">Atualizado</span>
-                            </div>
-                        </div>
-
-                        <p id="modalSynopsis" class="modal-description">
-                            Sinopse...
-                        </p>
-                    </div>
-                </div>
+                <h2 id="modalObraTitulo">Título da Obra</h2>
+                <button class="btn-close" onclick="userApp.closeObraModal()">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
+            <div class="obra-detail">
+                <div class="obra-detail-main">
+                    <img id="modalObraCapa" src="" alt="Capa" class="detail-capa">
+                    <div class="obra-detail-info">
+                        <div class="detail-meta" id="modalObraMeta"></div>
+                        <div class="detail-autor" id="modalObraAutor"></div>
+                        
+                        <!-- Progresso do usuário (aparece apenas se logado) -->
+                        <div id="userProgress" class="user-progress hidden">
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" id="progressFill"></div>
+                            </div>
+                            <span id="progressText">0% lido</span>
+                        </div>
 
-            <div class="modal-body">
-                <h3>📑 Capítulos Disponíveis</h3>
-                
-                <div class="chapters-toolbar">
-                    <div class="search-chapter-box">
-                        <input type="text" id="searchChapter" placeholder="Buscar capítulo..." oninput="app.filterChapters()">
+                        <div class="detail-sinopse" id="modalObraSinopse"></div>
+                        <div class="detail-actions">
+                            <button class="btn btn-primary" id="btnContinuar" onclick="userApp.continuarLendo()">
+                                <i class="fas fa-book-reader"></i> <span id="btnContinuarText">Ler Agora</span>
+                            </button>
+                            <button class="btn btn-secondary" id="btnFavoritar" onclick="userApp.toggleFavorito()">
+                                <i class="far fa-heart"></i> <span id="btnFavoritarText">Favoritar</span>
+                            </button>
+                        </div>
                     </div>
-                    <select id="sortChapters" onchange="app.sortChapters()">
-                        <option value="newest">Mais recentes</option>
-                        <option value="oldest">Mais antigos</option>
-                    </select>
                 </div>
-
-                <div id="chaptersList" class="chapters-list-container"></div>
+                
+                <div class="capitulos-section">
+                    <h3><i class="fas fa-list"></i> Capítulos</h3>
+                    <div id="modalCapitulosList" class="capitulos-grid">
+                        <!-- Capítulos -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Reader -->
-    <section id="reader" class="reader hidden">
-        <div class="reader-header">
-            <button type="button" id="backBtn" class="btn-icon" title="Voltar">←</button>
-            
-            <div class="reader-title">
-                <h2 id="chapterTitle">Título do Capítulo</h2>
-                <span id="manhwaSubtitle">Nome do Manhwa</span>
+    <!-- Modal/Leitor de Capítulo -->
+    <div id="leitorModal" class="modal modal-fullscreen hidden">
+        <div class="leitor-header">
+            <div class="leitor-info">
+                <button class="btn btn-icon" onclick="userApp.closeLeitor()">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
+                <div class="leitor-titulos">
+                    <h3 id="leitorObraTitulo">Obra</h3>
+                    <span id="leitorCapituloTitulo">Capítulo 1</span>
+                </div>
             </div>
-
-            <select id="chapterSelect" class="chapter-select">
-                <option>Capítulos</option>
-            </select>
-            
-            <button type="button" id="bookmarkBtn" class="btn-icon" title="Favoritar">♡</button>
+            <div class="leitor-controls">
+                <button class="btn btn-icon" onclick="userApp.prevPage()" id="btnPrevPage">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <div class="page-indicator">
+                    <span id="leitorPageInfo">1 / 10</span>
+                    <div class="progress-mini">
+                        <div id="leitorProgressBar"></div>
+                    </div>
+                </div>
+                <button class="btn btn-icon" onclick="userApp.nextPage()" id="btnNextPage">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <button class="btn btn-icon" onclick="userApp.toggleFullscreen()">
+                    <i class="fas fa-expand"></i>
+                </button>
+            </div>
         </div>
-
-        <div id="pagesContainer" class="pages-container"></div>
-
-        <div class="reader-options">
-            <button type="button" id="themeToggle" class="option-btn" title="Alternar tema">🌓</button>
-            <button type="button" id="fitToggle" class="option-btn active" title="Ajustar à tela">⊘</button>
-            <button type="button" id="scrollTop" class="option-btn" title="Voltar ao topo">↑</button>
+        <div class="leitor-content" id="leitorContent">
+            <!-- Páginas -->
         </div>
-
-        <div class="reader-nav">
-            <button type="button" id="prevChapter" class="nav-btn-reader">← Anterior</button>
-            <span id="pageIndicator" class="page-indicator">1 / 1</span>
-            <button type="button" id="nextChapter" class="nav-btn-reader">Próximo →</button>
+        
+        <!-- Barra de capítulos -->
+        <div class="leitor-capitulos-bar">
+            <span>Próximo capítulo:</span>
+            <button class="btn btn-primary btn-small" id="btnProxCap" onclick="userApp.proximoCapitulo()">
+                Cap. <span id="proxCapNumero">2</span> <i class="fas fa-arrow-right"></i>
+            </button>
         </div>
-    </section>
+    </div>
 
-    <!-- Toast -->
-    <div id="toast" class="toast"></div>
-
-    <script src="./js/firebase-config.js"></script>
-    <script src="./js/app.js"></script>
+    <!-- Scripts -->
+    <script src="js/firebase-config.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>

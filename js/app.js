@@ -1,1612 +1,1328 @@
-class ManhwaReader {
-    constructor() {
-        this.currentUser = null;
-        this.currentManhwa = null;
-        this.currentChapter = null;
-        this.chapters = [];
-        this.allManhwas = {};
-        this.filteredManhwas = [];
-        this.isLightMode = false;
-        this.fitToScreen = true;
-        this.readingHistory = {};
-        this.favorites = new Set();
-        this.modalChapters = [];
-        
-        // Sistema de Filtros
-        this.activeFilters = {
-            type: 'all',
-            status: null,
-            demographic: null,
-            genres: new Set()
-        };
-        
-        this.currentSort = 'newest';
-        this.currentPage = 1;
-        this.itemsPerPage = 24;
-        this.totalPages = 1;
-        this.sidebarOpen = window.innerWidth > 1024;
-        
-        // Aguardar DOM estar pronto
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => this.init());
-        } else {
-            this.init();
-        }
-    }
+/**
+ * ManIndex - App do Usuário com Login e Progresso
+ */
 
+const userApp = {
+    // Estado
+    state: {
+        obras: [],
+        capitulos: [],
+        autores: [],
+        generos: [],
+        filtros: {
+            tipo: 'todos',
+            generos: [],
+            autores: [],
+            status: ['Em andamento', 'Completo', 'Hiato'],
+            busca: ''
+        },
+        paginacao: {
+            pagina: 1,
+            porPagina: 20,
+            total: 0
+        },
+        obraAtual: null,
+        capituloAtual: null,
+        paginaAtual: 0,
+        progressoUsuario: {},
+        favoritos: [],
+        historico: []
+    },
+
+    // Inicialização
     async init() {
-        console.log('🚀 Iniciando ManhwaReader...');
+        this.bindEvents();
         
-        // Configurar listeners primeiro
-        this.setupEventListeners();
-        this.setupSidebarListeners();
-        this.setupAuthListener();
-        this.setupScrollProgress();
+        // Verificar auth
+        const isLogged = await UserAuth.init();
+        this.updateUIAuth(isLogged);
         
-        // Inicializar UI
-        this.initSidebarState();
+        if (isLogged) {
+            await this.carregarDadosUsuario();
+        }
         
-        // Carregar dados
-        await this.loadManhwasWithRetry();
-    }
+        await this.carregarDadosIniciais();
+        this.aplicarFiltros();
+    },
 
-    initSidebarState() {
-        const sidebar = document.getElementById('sidebar');
-        if (sidebar) {
-            if (window.innerWidth > 1024) {
-                sidebar.classList.remove('closed');
-                sidebar.classList.add('open');
-            } else {
-                sidebar.classList.add('closed');
-                sidebar.classList.remove('open');
-            }
-        }
-    }
+    // Event Listeners - DEFINIDA AQUI
+    bindEvents() {
+        console.log('Binding events...');
 
-    // ==================== SIDEBAR ====================
-    
-    toggleSidebar() {
-        this.sidebarOpen = !this.sidebarOpen;
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('sidebarOverlay');
-        
-        if (sidebar) {
-            if (this.sidebarOpen) {
-                sidebar.classList.remove('closed');
-                sidebar.classList.add('open');
-            } else {
-                sidebar.classList.add('closed');
-                sidebar.classList.remove('open');
-            }
-        }
-        if (overlay) {
-            overlay.style.display = this.sidebarOpen && window.innerWidth <= 1024 ? 'block' : 'none';
-        }
-    }
-
-    setupSidebarListeners() {
-        console.log('🔧 Configurando listeners da sidebar...');
-
-        // Menu toggle
-        const menuToggle = document.getElementById('menuToggle');
-        if (menuToggle) {
-            menuToggle.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.toggleSidebar();
-            });
-        }
-
-        // Close sidebar button
-        const closeSidebar = document.querySelector('.close-sidebar');
-        if (closeSidebar) {
-            closeSidebar.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.toggleSidebar();
-            });
-        }
-
-        // Overlay
-        const overlay = document.getElementById('sidebarOverlay');
-        if (overlay) {
-            overlay.addEventListener('click', () => this.toggleSidebar());
-        }
-
-        // Resize handler
-        window.addEventListener('resize', () => {
-            const sidebar = document.getElementById('sidebar');
-            if (window.innerWidth > 1024) {
-                this.sidebarOpen = true;
-                if (sidebar) {
-                    sidebar.classList.remove('closed');
-                    sidebar.classList.add('open');
-                }
-                if (overlay) overlay.style.display = 'none';
-            }
-        });
-    }
-
-    // ==================== EVENT LISTENERS - DELEGAÇÃO ====================
-
-    setupEventListeners() {
-        console.log('🔧 Configurando event listeners...');
-
-        // DELEGAÇÃO DE EVENTOS NA SIDEBAR
-        const sidebar = document.getElementById('sidebar');
-        if (sidebar) {
-            sidebar.addEventListener('click', (e) => {
-                console.log('Click na sidebar:', e.target);
-                
-                // Tipo de Obra
-                const typeItem = e.target.closest('.nav-item[data-type]');
-                if (typeItem) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const type = typeItem.dataset.type;
-                    console.log('🎯 Click tipo:', type);
-                    this.setTypeFilter(type);
-                    return;
-                }
-
-                // Status
-                const statusItem = e.target.closest('.nav-item[data-status]');
-                if (statusItem) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const status = statusItem.dataset.status;
-                    console.log('🎯 Click status:', status);
-                    this.toggleStatusFilter(status);
-                    return;
-                }
-
-                // Demografia
-                const demoItem = e.target.closest('.nav-item[data-demo]');
-                if (demoItem) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const demo = demoItem.dataset.demo;
-                    console.log('🎯 Click demo:', demo);
-                    this.toggleDemographicFilter(demo);
-                    return;
-                }
-
-                // Gênero
-                const genreTag = e.target.closest('.genre-tag[data-genre]');
-                if (genreTag) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const genre = genreTag.dataset.genre;
-                    console.log('🎯 Click gênero:', genre);
-                    this.toggleGenreFilter(genre);
-                    return;
-                }
-            });
-        }
-
-        // Auth Modal
-        const authModal = document.getElementById('authModal');
-        if (authModal) {
-            authModal.addEventListener('click', (e) => {
-                if (e.target === authModal || e.target.classList.contains('modal-backdrop')) {
-                    this.closeAuthModal();
-                }
-            });
-        }
-
-        // Auth Tabs
-        document.querySelectorAll('.auth-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.auth-panel').forEach(p => p.classList.remove('active'));
-                
-                e.target.classList.add('active');
-                const tabId = e.target.dataset.tab + 'Tab';
-                const tabElement = document.getElementById(tabId);
-                if (tabElement) tabElement.classList.add('active');
+        // Navegação por tipo
+        document.querySelectorAll('.type-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.state.filtros.tipo = btn.dataset.type;
+                this.state.paginacao.pagina = 1;
+                this.aplicarFiltros();
+                this.atualizarBreadcrumbs();
             });
         });
 
-        // Login Form
-        const loginForm = document.getElementById('loginForm');
-        if (loginForm) {
-            loginForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const email = document.getElementById('loginEmail')?.value;
-                const password = document.getElementById('loginPassword')?.value;
-                
-                if (!email || !password) return;
-                
-                try {
-                    await auth.signInWithEmailAndPassword(email, password);
-                    this.closeAuthModal();
-                    this.showToast('Bem-vindo de volta! 👋', 'success');
-                } catch (error) {
-                    this.showToast(this.getAuthErrorMessage(error), 'error');
-                }
-            });
-        }
-
-        // Register Form
-        const registerForm = document.getElementById('registerForm');
-        if (registerForm) {
-            registerForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const name = document.getElementById('registerName')?.value;
-                const email = document.getElementById('registerEmail')?.value;
-                const password = document.getElementById('registerPassword')?.value;
-                
-                if (!email || !password) return;
-                
-                try {
-                    const { user } = await auth.createUserWithEmailAndPassword(email, password);
-                    if (name) await user.updateProfile({ displayName: name });
-                    
-                    this.closeAuthModal();
-                    this.showToast('Conta criada com sucesso! 🎉', 'success');
-                } catch (error) {
-                    this.showToast(this.getAuthErrorMessage(error), 'error');
-                }
-            });
-        }
-
-        // Google Login
-        const googleBtn = document.getElementById('googleLogin');
-        if (googleBtn) {
-            googleBtn.addEventListener('click', async () => {
-                const provider = new firebase.auth.GoogleAuthProvider();
-                provider.setCustomParameters({ prompt: 'select_account' });
-                
-                try {
-                    await auth.signInWithRedirect(provider);
-                } catch (error) {
-                    console.error('Erro Google login:', error);
-                    this.showToast(this.getAuthErrorMessage(error), 'error');
-                    
-                    try {
-                        await auth.signInWithPopup(provider);
-                        this.closeAuthModal();
-                        this.showToast('Login com Google realizado! 👋', 'success');
-                    } catch (popupError) {
-                        this.showToast(this.getAuthErrorMessage(popupError), 'error');
-                    }
-                }
-            });
-        }
-
-        // Search
+        // Busca
         const searchInput = document.getElementById('searchInput');
+        let searchTimeout;
         if (searchInput) {
-            let searchTimeout;
             searchInput.addEventListener('input', (e) => {
                 clearTimeout(searchTimeout);
                 searchTimeout = setTimeout(() => {
-                    this.searchManhwas(e.target.value);
+                    this.state.filtros.busca = e.target.value.toLowerCase();
+                    this.state.paginacao.pagina = 1;
+                    this.aplicarFiltros();
                 }, 300);
             });
         }
 
-        // Sort
+        // Ordenação
         const sortSelect = document.getElementById('sortSelect');
         if (sortSelect) {
-            sortSelect.addEventListener('change', () => this.sortObras());
-        }
-
-        // Clear History
-        const clearHistoryBtn = document.getElementById('clearHistory');
-        if (clearHistoryBtn) {
-            clearHistoryBtn.addEventListener('click', () => this.clearHistory());
-        }
-
-        // Reader controls
-        const backBtn = document.getElementById('backBtn');
-        if (backBtn) backBtn.addEventListener('click', () => this.showList());
-
-        const chapterSelect = document.getElementById('chapterSelect');
-        if (chapterSelect) {
-            chapterSelect.addEventListener('change', (e) => {
-                if (e.target.value) this.loadChapter(e.target.value);
+            sortSelect.addEventListener('change', () => {
+                this.aplicarFiltros();
             });
         }
 
-        const prevChapter = document.getElementById('prevChapter');
-        if (prevChapter) prevChapter.addEventListener('click', () => this.navigateChapter(-1));
-
-        const nextChapter = document.getElementById('nextChapter');
-        if (nextChapter) nextChapter.addEventListener('click', () => this.navigateChapter(1));
-
-        const themeToggle = document.getElementById('themeToggle');
-        if (themeToggle) themeToggle.addEventListener('click', () => this.toggleTheme());
-
-        const fitToggle = document.getElementById('fitToggle');
-        if (fitToggle) fitToggle.addEventListener('click', () => this.toggleFit());
-
-        const scrollTop = document.getElementById('scrollTop');
-        if (scrollTop) {
-            scrollTop.addEventListener('click', () => {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            });
-        }
-
-        const bookmarkBtn = document.getElementById('bookmarkBtn');
-        if (bookmarkBtn) bookmarkBtn.addEventListener('click', () => this.toggleFavorite());
-
-        console.log('✅ Event listeners configurados');
-    }
-
-    // ==================== SISTEMA DE FILTROS ====================
-
-    setTypeFilter(type) {
-        console.log('🎯 setTypeFilter:', type);
-        this.activeFilters.type = type;
-        this.currentPage = 1;
-        this.applyFilters();
-        this.updateSectionTitle();
-        this.updateSidebarUI();
+        // Paginação
+        const prevPage = document.getElementById('prevPage');
+        const nextPage = document.getElementById('nextPage');
         
-        // Fechar sidebar em mobile após seleção
-        if (window.innerWidth <= 1024) {
-            this.toggleSidebar();
-        }
-    }
-
-    toggleStatusFilter(status) {
-        console.log('🎯 toggleStatusFilter:', status);
-        if (this.activeFilters.status === status) {
-            this.activeFilters.status = null;
-        } else {
-            this.activeFilters.status = status;
-        }
-        this.currentPage = 1;
-        this.applyFilters();
-        this.updateSidebarUI();
-    }
-
-    toggleDemographicFilter(demo) {
-        console.log('🎯 toggleDemographicFilter:', demo);
-        if (this.activeFilters.demographic === demo) {
-            this.activeFilters.demographic = null;
-        } else {
-            this.activeFilters.demographic = demo;
-        }
-        this.currentPage = 1;
-        this.applyFilters();
-        this.updateSidebarUI();
-    }
-
-    toggleGenreFilter(genre) {
-        console.log('🎯 toggleGenreFilter:', genre);
-        if (this.activeFilters.genres.has(genre)) {
-            this.activeFilters.genres.delete(genre);
-        } else {
-            this.activeFilters.genres.add(genre);
-        }
-        this.currentPage = 1;
-        this.applyFilters();
-        this.updateSidebarUI();
-    }
-
-    clearFilter(type, value = null) {
-        console.log('🧹 clearFilter:', type, value);
-        
-        switch(type) {
-            case 'type':
-                this.activeFilters.type = 'all';
-                break;
-            case 'status':
-                this.activeFilters.status = null;
-                break;
-            case 'demographic':
-                this.activeFilters.demographic = null;
-                break;
-            case 'genre':
-                if (value) {
-                    this.activeFilters.genres.delete(value);
-                } else {
-                    this.activeFilters.genres.clear();
+        if (prevPage) {
+            prevPage.addEventListener('click', () => {
+                if (this.state.paginacao.pagina > 1) {
+                    this.state.paginacao.pagina--;
+                    this.aplicarFiltros();
+                    this.scrollToTop();
                 }
-                break;
-            case 'all':
-                this.activeFilters = {
-                    type: 'all',
-                    status: null,
-                    demographic: null,
-                    genres: new Set()
-                };
-                break;
+            });
         }
+
+        if (nextPage) {
+            nextPage.addEventListener('click', () => {
+                const maxPaginas = Math.ceil(this.state.paginacao.total / this.state.paginacao.porPagina);
+                if (this.state.paginacao.pagina < maxPaginas) {
+                    this.state.paginacao.pagina++;
+                    this.aplicarFiltros();
+                    this.scrollToTop();
+                }
+            });
+        }
+
+        // Mobile menu
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
         
-        this.currentPage = 1;
-        this.applyFilters();
-        this.updateSidebarUI();
-    }
-
-    applyFilters() {
-        console.log('🔍 Aplicando filtros:', JSON.stringify({
-            type: this.activeFilters.type,
-            status: this.activeFilters.status,
-            demographic: this.activeFilters.demographic,
-            genres: Array.from(this.activeFilters.genres)
-        }));
-        
-        let result = Object.values(this.allManhwas);
-        console.log('📚 Total de obras:', result.length);
-
-        // Filtro por Tipo
-        if (this.activeFilters.type !== 'all') {
-            result = result.filter(m => {
-                const obraType = (m.type || '').toLowerCase();
-                const filterType = this.activeFilters.type.toLowerCase();
-                const match = obraType === filterType;
-                console.log(`  Tipo: ${obraType} === ${filterType} ? ${match}`);
-                return match;
+        if (mobileMenuBtn) {
+            mobileMenuBtn.addEventListener('click', () => {
+                document.getElementById('filtersSidebar').classList.add('open');
+                if (sidebarOverlay) sidebarOverlay.classList.add('active');
             });
         }
 
-        // Filtro por Status
-        if (this.activeFilters.status) {
-            result = result.filter(m => {
-                const obraStatus = (m.status || 'ongoing').toLowerCase();
-                const filterStatus = this.activeFilters.status.toLowerCase();
-                return obraStatus === filterStatus;
+        if (sidebarOverlay) {
+            sidebarOverlay.addEventListener('click', () => {
+                document.getElementById('filtersSidebar').classList.remove('open');
+                sidebarOverlay.classList.remove('active');
             });
         }
 
-        // Filtro por Demografia
-        if (this.activeFilters.demographic) {
-            result = result.filter(m => {
-                const obraDemo = (m.demographic || '').toLowerCase();
-                const filterDemo = this.activeFilters.demographic.toLowerCase();
-                return obraDemo === filterDemo;
+        // Limpar filtros
+        const clearFilters = document.getElementById('clearFilters');
+        if (clearFilters) {
+            clearFilters.addEventListener('click', () => {
+                this.limparFiltros();
             });
         }
 
-        // Filtro por Gêneros (OR logic)
-        if (this.activeFilters.genres.size > 0) {
-            result = result.filter(m => {
-                const obraGenres = (m.genres || m.genre || []).map(g => g.toLowerCase());
-                const filterGenres = Array.from(this.activeFilters.genres).map(g => g.toLowerCase());
-                const hasMatch = filterGenres.some(g => obraGenres.includes(g));
-                console.log(`  Gêneros obra: ${obraGenres.join(', ')} - Match: ${hasMatch}`);
-                return hasMatch;
-            });
-        }
-
-        this.filteredManhwas = result;
-        console.log(`✅ ${result.length} obras após filtros`);
-        
-        this.sortObras(false);
-        this.updateActiveFiltersUI();
-        this.updateCounts();
-    }
-
-    updateSidebarUI() {
-        console.log('🎨 Atualizando UI da sidebar...');
-
-        // Tipos
-        document.querySelectorAll('.nav-item[data-type]').forEach(item => {
-            const isActive = item.dataset.type === this.activeFilters.type;
-            item.classList.toggle('active', isActive);
-        });
-
-        // Status
-        document.querySelectorAll('.nav-item[data-status]').forEach(item => {
-            const isActive = item.dataset.status === this.activeFilters.status;
-            item.classList.toggle('active', isActive);
-        });
-
-        // Demografia
-        document.querySelectorAll('.nav-item[data-demo]').forEach(item => {
-            const isActive = item.dataset.demo === this.activeFilters.demographic;
-            item.classList.toggle('active', isActive);
-        });
-
-        // Gêneros
-        document.querySelectorAll('.genre-tag[data-genre]').forEach(tag => {
-            const isActive = this.activeFilters.genres.has(tag.dataset.genre);
-            tag.classList.toggle('active', isActive);
-        });
-    }
-
-    sortObras(updateUI = true) {
-        const sortSelect = document.getElementById('sortSelect');
-        const sortValue = sortSelect ? sortSelect.value : this.currentSort;
-        this.currentSort = sortValue;
-
-        switch(sortValue) {
-            case 'newest':
-                this.filteredManhwas.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-                break;
-            case 'updated':
-                this.filteredManhwas.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                break;
-            case 'popular':
-                this.filteredManhwas.sort((a, b) => (b.views || 0) - (a.views || 0));
-                break;
-            case 'rating':
-                this.filteredManhwas.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-                break;
-            case 'alpha':
-                this.filteredManhwas.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-                break;
-            case 'chapters':
-                this.filteredManhwas.sort((a, b) => {
-                    const countA = a.chapters ? Object.keys(a.chapters).length : 0;
-                    const countB = b.chapters ? Object.keys(b.chapters).length : 0;
-                    return countB - countA;
-                });
-                break;
-        }
-
-        if (updateUI) {
-            this.currentPage = 1;
-            this.renderGrid();
-        } else {
-            this.renderGrid();
-        }
-    }
-
-    updateSectionTitle() {
-        const titleEl = document.getElementById('sectionTitle');
-        if (!titleEl) return;
-
-        const typeNames = {
-            'all': '🔥 Todas as Obras',
-            'manga': '🇯🇵 Mangás',
-            'manhwa': '🇰🇷 Manhwas',
-            'manhua': '🇨🇳 Manhuas',
-            'webtoon': '📱 Webtoons',
-            'novel': '📕 Light Novels'
-        };
-
-        titleEl.textContent = typeNames[this.activeFilters.type] || '🔥 Obras';
-    }
-
-    updateActiveFiltersUI() {
-        const container = document.getElementById('activeFilters');
-        if (!container) return;
-
-        let html = '';
-
-        if (this.activeFilters.type !== 'all') {
-            html += this.createFilterPill('type', this.activeFilters.type, this.getTypeLabel(this.activeFilters.type));
-        }
-
-        if (this.activeFilters.status) {
-            html += this.createFilterPill('status', this.activeFilters.status, this.getStatusLabel(this.activeFilters.status));
-        }
-
-        if (this.activeFilters.demographic) {
-            html += this.createFilterPill('demographic', this.activeFilters.demographic, this.getDemoLabel(this.activeFilters.demographic));
-        }
-
-        this.activeFilters.genres.forEach(genre => {
-            html += this.createFilterPill('genre', genre, this.getGenreLabel(genre));
-        });
-
-        if (html) {
-            html += `<button class="clear-all-filters" onclick="app.clearFilter('all')">Limpar Todos ✕</button>`;
-        }
-
-        container.innerHTML = html;
-    }
-
-    createFilterPill(type, value, label) {
-        return `
-            <div class="filter-pill">
-                <span>${label}</span>
-                <button onclick="app.clearFilter('${type}', '${value}')" title="Remover filtro">✕</button>
-            </div>
-        `;
-    }
-
-    getTypeLabel(type) {
-        const labels = {
-            'manga': '🇯🇵 Mangá',
-            'manhwa': '🇰🇷 Manhwa',
-            'manhua': '🇨🇳 Manhua',
-            'webtoon': '📱 Webtoon',
-            'novel': '📕 Novel'
-        };
-        return labels[type] || type;
-    }
-
-    getStatusLabel(status) {
-        const labels = {
-            'ongoing': '🟢 Em Andamento',
-            'completed': '✅ Completo',
-            'hiatus': '⏸️ Hiato',
-            'cancelled': '❌ Cancelado'
-        };
-        return labels[status] || status;
-    }
-
-    getDemoLabel(demo) {
-        const labels = {
-            'shounen': '👦 Shounen',
-            'shoujo': '👧 Shoujo',
-            'seinen': '👨 Seinen',
-            'josei': '👩 Josei'
-        };
-        return labels[demo] || demo;
-    }
-
-    getGenreLabel(genre) {
-        const labels = {
-            'action': 'Ação',
-            'adventure': 'Aventura',
-            'comedy': 'Comédia',
-            'drama': 'Drama',
-            'fantasy': 'Fantasia',
-            'harem': 'Harem',
-            'isekai': 'Isekai',
-            'martial': 'Artes Marciais',
-            'mystery': 'Mistério',
-            'psychological': 'Psicológico',
-            'romance': 'Romance',
-            'school': 'Vida Escolar',
-            'sci-fi': 'Sci-Fi',
-            'slice': 'Slice of Life',
-            'sports': 'Esportes',
-            'supernatural': 'Sobrenatural',
-            'thriller': 'Thriller',
-            'horror': 'Terror'
-        };
-        return labels[genre] || genre;
-    }
-
-    updateCounts() {
-        const counts = {
-            all: Object.keys(this.allManhwas).length,
-            manga: 0,
-            manhwa: 0,
-            manhua: 0,
-            webtoon: 0,
-            novel: 0
-        };
-
-        Object.values(this.allManhwas).forEach(obra => {
-            const type = (obra.type || '').toLowerCase();
-            if (counts.hasOwnProperty(type)) {
-                counts[type]++;
+        // Fechar dropdown ao clicar fora
+        document.addEventListener('click', (e) => {
+            const userMenu = document.querySelector('.user-menu');
+            const dropdown = document.getElementById('userDropdown');
+            
+            if (userMenu && dropdown && !userMenu.contains(e.target)) {
+                dropdown.classList.add('hidden');
             }
         });
 
-        Object.keys(counts).forEach(type => {
-            const el = document.getElementById(`count-${type}`);
-            if (el) el.textContent = counts[type];
+        console.log('Events bound successfully');
+    },
+
+    // Carregar dados do usuário (progresso, favoritos, histórico)
+    async carregarDadosUsuario() {
+        if (!UserAuth.currentUser) return;
+
+        try {
+            console.log('Carregando dados do usuário...');
+
+            // Carregar progresso de leitura
+            const progressoSnapshot = await db.collection('userProgress')
+                .doc(UserAuth.currentUser.uid)
+                .collection('obras')
+                .get();
+            
+            progressoSnapshot.forEach(doc => {
+                this.state.progressoUsuario[doc.id] = doc.data();
+            });
+
+            // Carregar favoritos
+            const favoritosSnapshot = await db.collection('userFavorites')
+                .doc(UserAuth.currentUser.uid)
+                .collection('obras')
+                .get();
+            
+            this.state.favoritos = favoritosSnapshot.docs.map(doc => doc.id);
+
+            // Carregar histórico
+            const historicoSnapshot = await db.collection('userHistory')
+                .doc(UserAuth.currentUser.uid)
+                .collection('leituras')
+                .orderBy('timestamp', 'desc')
+                .limit(50)
+                .get();
+            
+            this.state.historico = historicoSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                timestamp: doc.data().timestamp?.toDate()
+            }));
+
+            console.log('✅ Dados do usuário carregados');
+        } catch (error) {
+            console.error('Erro ao carregar dados do usuário:', error);
+        }
+    },
+
+    // Carregar dados iniciais (obras, autores, gêneros)
+    async carregarDadosIniciais() {
+        this.showLoading(true);
+
+        try {
+            console.log('Carregando obras...');
+
+            // Carregar todas as obras
+            const snapshot = await db.collection('obras')
+                .orderBy('createdAt', 'desc')
+                .get();
+
+            this.state.obras = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                createdAt: doc.data().createdAt?.toDate()
+            }));
+
+            console.log(`✅ ${this.state.obras.length} obras carregadas`);
+
+            // Extrair autores únicos
+            const autoresMap = new Map();
+            this.state.obras.forEach(obra => {
+                if (obra.autorId && !autoresMap.has(obra.autorId)) {
+                    autoresMap.set(obra.autorId, {
+                        id: obra.autorId,
+                        nome: obra.autorNome || 'Autor Desconhecido'
+                    });
+                }
+            });
+            this.state.autores = Array.from(autoresMap.values());
+
+            // Extrair gêneros únicos
+            const generosSet = new Set();
+            this.state.obras.forEach(obra => {
+                if (obra.generos) {
+                    obra.generos.split(',').forEach(g => {
+                        const genero = g.trim();
+                        if (genero) generosSet.add(genero);
+                    });
+                }
+            });
+            this.state.generos = Array.from(generosSet).sort();
+
+            // Renderizar filtros
+            this.renderFiltros();
+
+        } catch (error) {
+            console.error('Erro ao carregar dados:', error);
+            this.showToast('Erro ao carregar obras', 'error');
+        }
+
+        this.showLoading(false);
+    },
+
+    // Renderizar lista de filtros
+    renderFiltros() {
+        // Gêneros
+        const generosContainer = document.getElementById('generosList');
+        if (generosContainer) {
+            generosContainer.innerHTML = this.state.generos.map(genero => `
+                <label class="filter-checkbox">
+                    <input type="checkbox" value="${genero}" onchange="userApp.toggleGenero('${genero}')">
+                    <span>${genero}</span>
+                </label>
+            `).join('');
+        }
+
+        // Autores
+        const autoresContainer = document.getElementById('autoresList');
+        if (autoresContainer) {
+            autoresContainer.innerHTML = this.state.autores.map(autor => `
+                <label class="filter-checkbox">
+                    <input type="checkbox" value="${autor.id}" onchange="userApp.toggleAutor('${autor.id}')">
+                    <span>${autor.nome}</span>
+                </label>
+            `).join('');
+        }
+    },
+
+    // Toggle filtros
+    toggleGenero(genero) {
+        const index = this.state.filtros.generos.indexOf(genero);
+        if (index > -1) {
+            this.state.filtros.generos.splice(index, 1);
+        } else {
+            this.state.filtros.generos.push(genero);
+        }
+        this.state.paginacao.pagina = 1;
+        this.aplicarFiltros();
+    },
+
+    toggleAutor(autorId) {
+        const index = this.state.filtros.autores.indexOf(autorId);
+        if (index > -1) {
+            this.state.filtros.autores.splice(index, 1);
+        } else {
+            this.state.filtros.autores.push(autorId);
+        }
+        this.state.paginacao.pagina = 1;
+        this.aplicarFiltros();
+    },
+
+    // Aplicar filtros e renderizar
+    aplicarFiltros() {
+        console.log('Aplicando filtros...');
+
+        let obrasFiltradas = this.state.obras.filter(obra => {
+            // Filtro por tipo
+            if (this.state.filtros.tipo !== 'todos' && obra.tipo !== this.state.filtros.tipo) {
+                return false;
+            }
+
+            // Filtro por gênero
+            if (this.state.filtros.generos.length > 0) {
+                const obraGeneros = obra.generos ? obra.generos.split(',').map(g => g.trim()) : [];
+                const hasGenero = this.state.filtros.generos.some(g => obraGeneros.includes(g));
+                if (!hasGenero) return false;
+            }
+
+            // Filtro por autor
+            if (this.state.filtros.autores.length > 0) {
+                if (!this.state.filtros.autores.includes(obra.autorId)) return false;
+            }
+
+            // Filtro por status
+            if (!this.state.filtros.status.includes(obra.status)) {
+                return false;
+            }
+
+            // Filtro por busca
+            if (this.state.filtros.busca) {
+                const searchTerm = this.state.filtros.busca.toLowerCase();
+                const matchTitulo = obra.titulo?.toLowerCase().includes(searchTerm);
+                const matchAutor = obra.autorNome?.toLowerCase().includes(searchTerm);
+                const matchGenero = obra.generos?.toLowerCase().includes(searchTerm);
+                if (!matchTitulo && !matchAutor && !matchGenero) return false;
+            }
+
+            return true;
         });
-    }
 
-    // ==================== PAGINAÇÃO E RENDER ====================
-
-    changePage(direction) {
-        const newPage = this.currentPage + direction;
-        if (newPage >= 1 && newPage <= this.totalPages) {
-            this.currentPage = newPage;
-            this.renderGrid();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Ordenação
+        const sortType = document.getElementById('sortSelect')?.value || 'recentes';
+        switch (sortType) {
+            case 'az':
+                obrasFiltradas.sort((a, b) => a.titulo.localeCompare(b.titulo));
+                break;
+            case 'za':
+                obrasFiltradas.sort((a, b) => b.titulo.localeCompare(a.titulo));
+                break;
+            case 'capitulos':
+                obrasFiltradas.sort((a, b) => (b.capitulos || 0) - (a.capitulos || 0));
+                break;
+            default: // recentes
+                obrasFiltradas.sort((a, b) => b.createdAt - a.createdAt);
         }
-    }
 
-    goToPage(page) {
-        if (page >= 1 && page <= this.totalPages) {
-            this.currentPage = page;
-            this.renderGrid();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Paginação
+        this.state.paginacao.total = obrasFiltradas.length;
+        const inicio = (this.state.paginacao.pagina - 1) * this.state.paginacao.porPagina;
+        const fim = inicio + this.state.paginacao.porPagina;
+        const obrasPagina = obrasFiltradas.slice(inicio, fim);
+
+        // Renderizar
+        this.renderObras(obrasPagina);
+        this.updatePagination();
+        this.updateResultsCount(obrasFiltradas.length);
+    },
+
+    // Renderizar grid de obras
+    renderObras(obras) {
+        const container = document.getElementById('obrasGrid');
+        const placeholderUrl = 'https://placehold.co/300x450/1e1e1e/d32f2f?text=Sem+Capa';
+
+        if (!obras.length) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-search"></i>
+                    <h3>Nenhuma obra encontrada</h3>
+                    <p>Tente ajustar seus filtros</p>
+                </div>
+            `;
+            return;
         }
-    }
 
-    renderPagination() {
-        const container = document.getElementById('pagination');
-        const pageNumbers = document.getElementById('pageNumbers');
+        container.innerHTML = obras.map(obra => {
+            // Verificar progresso do usuário
+            const progresso = this.getProgressoObra(obra.id);
+            const temProgresso = progresso && progresso.percentual > 0;
+            
+            return `
+            <div class="obra-card" onclick="userApp.openObraModal('${obra.id}')">
+                <div style="position: relative;">
+                    <img src="${obra.capa || placeholderUrl}" 
+                         alt="${obra.titulo}" 
+                         class="obra-capa"
+                         onerror="this.src='${placeholderUrl}'"
+                         loading="lazy">
+                    ${temProgresso ? `
+                    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: var(--bg-hover);">
+                        <div style="width: ${progresso.percentual}%; height: 100%; background: var(--primary);"></div>
+                    </div>
+                    ` : ''}
+                </div>
+                <div class="obra-info">
+                    <h3 class="obra-titulo" title="${obra.titulo}">${obra.titulo}</h3>
+                    <div class="obra-meta">
+                        <span class="obra-tipo">${obra.tipo}</span>
+                        <span class="obra-status">${obra.status}</span>
+                    </div>
+                    <div class="obra-autor" title="${obra.autorNome || 'Autor desconhecido'}">
+                        <i class="fas fa-user"></i> ${obra.autorNome || 'Autor desconhecido'}
+                    </div>
+                    <div class="obra-capitulos">
+                        <i class="fas fa-file-alt"></i> ${obra.capitulos || 0} capítulos
+                        ${temProgresso ? `<span style="color: var(--primary); margin-left: 0.5rem;">${progresso.percentual}%</span>` : ''}
+                    </div>
+                </div>
+            </div>
+        `}).join('');
+    },
+
+    // Atualizar paginação
+    updatePagination() {
+        const maxPaginas = Math.ceil(this.state.paginacao.total / this.state.paginacao.porPagina);
+        
         const prevBtn = document.getElementById('prevPage');
         const nextBtn = document.getElementById('nextPage');
-
-        if (!container || this.totalPages <= 1) {
-            if (container) container.style.display = 'none';
-            return;
-        }
-
-        container.style.display = 'flex';
+        const pageInfo = document.getElementById('pageInfo');
         
-        if (prevBtn) prevBtn.disabled = this.currentPage === 1;
-        if (nextBtn) nextBtn.disabled = this.currentPage === this.totalPages;
+        if (prevBtn) prevBtn.disabled = this.state.paginacao.pagina <= 1;
+        if (nextBtn) nextBtn.disabled = this.state.paginacao.pagina >= maxPaginas;
+        if (pageInfo) pageInfo.textContent = `Página ${this.state.paginacao.pagina} de ${maxPaginas || 1}`;
+    },
 
-        if (pageNumbers) {
-            let html = '';
-            const maxVisible = 5;
-            let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
-            let end = Math.min(this.totalPages, start + maxVisible - 1);
-            
-            if (end - start < maxVisible - 1) {
-                start = Math.max(1, end - maxVisible + 1);
-            }
-
-            if (start > 1) {
-                html += `<button class="page-number" onclick="app.goToPage(1)">1</button>`;
-                if (start > 2) html += `<span class="page-ellipsis">...</span>`;
-            }
-
-            for (let i = start; i <= end; i++) {
-                html += `<button class="page-number ${i === this.currentPage ? 'active' : ''}" onclick="app.goToPage(${i})">${i}</button>`;
-            }
-
-            if (end < this.totalPages) {
-                if (end < this.totalPages - 1) html += `<span class="page-ellipsis">...</span>`;
-                html += `<button class="page-number" onclick="app.goToPage(${this.totalPages})">${this.totalPages}</button>`;
-            }
-
-            pageNumbers.innerHTML = html;
+    // Atualizar contador
+    updateResultsCount(total) {
+        const el = document.getElementById('resultsCount');
+        if (el) {
+            el.textContent = `${total} obra${total !== 1 ? 's' : ''} encontrada${total !== 1 ? 's' : ''}`;
         }
-    }
+    },
 
-    renderGrid() {
-        const grid = document.getElementById('manhwaGrid');
-        if (!grid) return;
-
-        const totalItems = this.filteredManhwas.length;
-        this.totalPages = Math.ceil(totalItems / this.itemsPerPage) || 1;
-        const start = (this.currentPage - 1) * this.itemsPerPage;
-        const end = start + this.itemsPerPage;
-        const pageItems = this.filteredManhwas.slice(start, end);
-
-        const resultsCount = document.getElementById('resultsCount');
-        if (resultsCount) {
-            resultsCount.textContent = `${totalItems} obra${totalItems !== 1 ? 's' : ''}`;
-        }
-
-        grid.innerHTML = '';
-
-        if (pageItems.length === 0) {
-            grid.innerHTML = `
-                <div style="grid-column: 1 / -1; text-align: center; padding: 3rem;">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
-                    <h3 style="margin-bottom: 1rem;">Nenhuma obra encontrada</h3>
-                    <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
-                        Tente ajustar os filtros ou buscar por outro termo
-                    </p>
-                    <button onclick="app.clearFilter('all')" class="btn-primary" style="width: auto; padding: 0.75rem 2rem;">
-                        Limpar Filtros
-                    </button>
-                </div>
-            `;
-            this.renderPagination();
-            return;
-        }
-
-        pageItems.forEach(manhwa => this.renderManhwaCard(manhwa, grid));
-        this.renderPagination();
-    }
-
-    renderManhwaCard(manhwa, container) {
-        const chapterCount = manhwa.chapters ? Object.keys(manhwa.chapters).length : 0;
-        const latestChapter = chapterCount > 0 ? 
-            Object.values(manhwa.chapters).sort((a, b) => b.number - a.number)[0] : null;
-
-        let statusClass = manhwa.status || 'ongoing';
-        const statusLabels = {
-            'ongoing': 'Em andamento',
-            'completed': 'Completo',
-            'hiatus': 'Hiato',
-            'cancelled': 'Cancelado'
-        };
-
-        const typeLabels = {
-            'manga': 'Mangá',
-            'manhwa': 'Manhwa',
-            'manhua': 'Manhua',
-            'webtoon': 'Webtoon',
-            'novel': 'Novel'
-        };
-
-        const card = document.createElement('div');
-        card.className = 'manhwa-card';
-        card.dataset.id = manhwa.id;
+    // Atualizar breadcrumbs
+    atualizarBreadcrumbs() {
+        const tipo = this.state.filtros.tipo;
+        const breadcrumbs = document.getElementById('breadcrumbs');
         
-        card.innerHTML = `
-            <div class="manhwa-cover-wrapper">
-                <img src="${manhwa.coverUrl || 'https://via.placeholder.com/220x320/1a1a2e/6366f1?text=Sem+Capa'}" 
-                     alt="${manhwa.title}" 
-                     class="manhwa-cover"
-                     loading="lazy"
-                     onerror="this.src='https://via.placeholder.com/220x320/1a1a2e/6366f1?text=Sem+Capa'">
-                <div class="card-badges">
-                    <span class="card-badge type">${typeLabels[manhwa.type] || 'Obra'}</span>
-                    <span class="card-badge status ${statusClass}">${statusLabels[statusClass]}</span>
-                </div>
-            </div>
-            <div class="manhwa-info">
-                <h3 class="manhwa-title">${manhwa.title || 'Sem título'}</h3>
-                <div class="manhwa-meta">
-                    <span>${manhwa.demographic ? this.getDemoLabel(manhwa.demographic) : (manhwa.genre?.slice(0, 2).join(', ') || 'Sem gênero')}</span>
-                    ${manhwa.rating ? `<span class="manhwa-rating">⭐ ${manhwa.rating}</span>` : ''}
-                </div>
-                ${latestChapter ? `
-                    <div class="manhwa-chapters">
-                        📖 Cap. ${latestChapter.number}
-                    </div>
-                ` : '<div class="manhwa-chapters">📖 Sem capítulos</div>'}
-            </div>
-        `;
+        if (!breadcrumbs) return;
         
-        card.addEventListener('click', () => this.openManhwaModal(manhwa));
-        container.appendChild(card);
-    }
-
-    // ==================== CARREGAMENTO DE DADOS ====================
-
-    async loadManhwasWithRetry(attempt = 1) {
-        try {
-            await this.loadManhwas();
-        } catch (error) {
-            console.error(`❌ Tentativa ${attempt} falhou:`, error);
-            if (attempt < 3) {
-                setTimeout(() => this.loadManhwasWithRetry(attempt + 1), 2000);
-            } else {
-                this.showLoadingError(error);
-            }
-        }
-    }
-
-    loadManhwas() {
-        return new Promise((resolve, reject) => {
-            console.log('📚 Carregando obras...');
-            const grid = document.getElementById('manhwaGrid');
-            
-            if (!grid) {
-                reject(new Error('Elemento manhwaGrid não encontrado'));
-                return;
-            }
-
-            const timeout = setTimeout(() => {
-                reject(new Error('Timeout ao carregar obras (10s)'));
-            }, 10000);
-
-            try {
-                const manhwasRef = database.ref('manhwas');
-                
-                manhwasRef.once('value', (snapshot) => {
-                    clearTimeout(timeout);
-                    console.log('✅ Dados recebidos do Firebase');
-                    
-                    this.allManhwas = {};
-                    
-                    if (!snapshot.exists()) {
-                        grid.innerHTML = `
-                            <div style="grid-column: 1 / -1; text-align: center; padding: 3rem;">
-                                <div style="font-size: 3rem; margin-bottom: 1rem;">📚</div>
-                                <h3 style="margin-bottom: 1rem;">Nenhuma obra cadastrada</h3>
-                                <p style="color: var(--text-secondary);">Adicione obras no Firebase para começar</p>
-                            </div>
-                        `;
-                        resolve();
-                        return;
-                    }
-
-                    snapshot.forEach((child) => {
-                        const manhwa = { id: child.key, ...child.val() };
-                        this.allManhwas[child.key] = manhwa;
-                    });
-
-                    this.applyFilters();
-                    this.loadContinueReading();
-                    resolve();
-                }, (error) => {
-                    clearTimeout(timeout);
-                    reject(error);
-                });
-
-            } catch (error) {
-                clearTimeout(timeout);
-                reject(error);
-            }
-        });
-    }
-
-    // ==================== MÉTODOS AUXILIARES (mantidos) ====================
-
-    setupAuthListener() {
-        auth.onAuthStateChanged(async (user) => {
-            this.currentUser = user;
-            
-            if (user) {
-                console.log('✅ Usuário logado:', user.email);
-                this.loadUserDataFromLocal();
-                this.showUserMenu();
-                this.loadContinueReading();
-            } else {
-                console.log('ℹ️ Usuário não logado');
-                this.showLoginButton();
-                this.hideContinueReading();
-            }
-        }, (error) => {
-            console.error('❌ Erro no auth:', error);
-        });
-    }
-
-    loadUserDataFromLocal() {
-        try {
-            const history = localStorage.getItem('manhwa_history');
-            const favorites = localStorage.getItem('manhwa_favorites');
-            
-            if (history) this.readingHistory = JSON.parse(history);
-            if (favorites) this.favorites = new Set(JSON.parse(favorites));
-            
-            console.log('✅ Dados locais carregados');
-        } catch (error) {
-            console.error('❌ Erro ao carregar dados locais:', error);
-        }
-    }
-
-    saveUserDataToLocal() {
-        try {
-            localStorage.setItem('manhwa_history', JSON.stringify(this.readingHistory));
-            localStorage.setItem('manhwa_favorites', JSON.stringify(Array.from(this.favorites)));
-        } catch (error) {
-            console.error('❌ Erro ao salvar dados locais:', error);
-        }
-    }
-
-    showUserMenu() {
-        const container = document.getElementById('authSection');
-        const displayName = this.currentUser?.displayName || this.currentUser?.email?.split('@')[0] || 'Usuário';
-        const initial = displayName.charAt(0).toUpperCase();
-        
-        container.innerHTML = `
-            <div class="user-menu">
-                <div class="user-avatar">${initial}</div>
-                <span class="user-name">${displayName}</span>
-                <div class="user-dropdown">
-                    <div class="dropdown-item" onclick="app.showProfile()">
-                        👤 Perfil
-                    </div>
-                    <div class="dropdown-item" onclick="app.showFavorites()">
-                        ♡ Favoritos (${this.favorites.size})
-                    </div>
-                    <div class="dropdown-divider"></div>
-                    <div class="dropdown-item" onclick="app.logout()">
-                        🚪 Sair
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    showLoginButton() {
-        const authSection = document.getElementById('authSection');
-        if (authSection) {
-            authSection.innerHTML = `
-                <button class="btn-login" onclick="app.openAuthModal()">Entrar</button>
-            `;
-        }
-    }
-
-    openAuthModal() {
-        const modal = document.getElementById('authModal');
-        if (modal) modal.classList.remove('hidden');
-    }
-
-    closeAuthModal() {
-        const modal = document.getElementById('authModal');
-        if (modal) modal.classList.add('hidden');
-        
-        const loginForm = document.getElementById('loginForm');
-        const registerForm = document.getElementById('registerForm');
-        if (loginForm) loginForm.reset();
-        if (registerForm) registerForm.reset();
-    }
-
-    async logout() {
-        try {
-            await auth.signOut();
-            this.readingHistory = {};
-            this.favorites.clear();
-            this.showToast('Você saiu da conta', 'success');
-        } catch (error) {
-            console.error('Erro ao sair:', error);
-        }
-    }
-
-    getAuthErrorMessage(error) {
-        const messages = {
-            'auth/invalid-email': 'Email inválido',
-            'auth/user-disabled': 'Conta desativada',
-            'auth/user-not-found': 'Usuário não encontrado',
-            'auth/wrong-password': 'Senha incorreta',
-            'auth/email-already-in-use': 'Email já cadastrado',
-            'auth/weak-password': 'Senha muito fraca (mínimo 6 caracteres)',
-            'auth/popup-closed-by-user': 'Login cancelado',
-            'auth/cancelled-popup-request': 'Muitas tentativas de login',
-            'auth/popup-blocked': 'Popup bloqueado pelo navegador',
-            'auth/network-request-failed': 'Erro de conexão'
-        };
-        return messages[error.code] || error.message;
-    }
-
-    async saveReadingProgress(manhwaId, chapterId, pageNumber = 1) {
-        if (!manhwaId || !chapterId) return;
-
-        const progress = {
-            manhwaId: manhwaId,
-            chapterId: chapterId,
-            pageNumber: pageNumber || 1,
-            lastRead: Date.now()
-        };
-
-        this.readingHistory[manhwaId] = progress;
-        this.saveUserDataToLocal();
-
-        if (this.currentUser) {
-            try {
-                const path = `users/${this.currentUser.uid}/history/${manhwaId}`;
-                await database.ref(path).set(progress);
-            } catch (error) {
-                console.log('ℹ️ Salvando apenas localmente');
-            }
-        }
-    }
-
-    async loadContinueReading() {
-        const container = document.getElementById('continueGrid');
-        const section = document.getElementById('continueReading');
-        
-        if (!container || !section) return;
-        
-        let historyEntries = Object.entries(this.readingHistory);
-        historyEntries.sort((a, b) => (b[1].lastRead || 0) - (a[1].lastRead || 0));
-        historyEntries = historyEntries.slice(0, 6);
-
-        if (historyEntries.length === 0) {
-            section.classList.add('hidden');
-            return;
-        }
-
-        section.classList.remove('hidden');
-        container.innerHTML = '';
-
-        for (const [manhwaId, progress] of historyEntries) {
-            const manhwa = this.allManhwas[manhwaId];
-            if (!manhwa) continue;
-
-            const chapter = manhwa.chapters?.[progress.chapterId];
-            if (!chapter) continue;
-
-            const totalPages = chapter.pages?.length || 1;
-            const readPercent = Math.round((progress.pageNumber / totalPages) * 100);
-
-            const card = document.createElement('div');
-            card.className = 'continue-card';
-            card.innerHTML = `
-                <img src="${manhwa.coverUrl}" class="continue-cover" 
-                     onerror="this.src='https://via.placeholder.com/80x110'">
-                <div class="continue-info">
-                    <div>
-                        <div class="continue-title">${manhwa.title}</div>
-                        <div class="continue-chapter">${chapter.title}</div>
-                    </div>
-                    <div class="continue-progress">
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${readPercent}%"></div>
-                        </div>
-                        <div class="continue-meta">
-                            <span>${readPercent}% lido</span>
-                            <span>Pág. ${progress.pageNumber}/${totalPages}</span>
-                        </div>
-                    </div>
-                </div>
-                <button class="btn-remove-continue" onclick="event.stopPropagation(); app.removeFromHistory('${manhwaId}')" title="Remover">
-                    ×
-                </button>
-            `;
-
-            card.addEventListener('click', () => this.openManhwaModal(manhwa));
-            container.appendChild(card);
-        }
-    }
-
-    hideContinueReading() {
-        document.getElementById('continueReading')?.classList.add('hidden');
-    }
-
-    async removeFromHistory(manhwaId) {
-        delete this.readingHistory[manhwaId];
-        this.saveUserDataToLocal();
-        
-        if (this.currentUser) {
-            try {
-                await database.ref(`users/${this.currentUser.uid}/history/${manhwaId}`).remove();
-            } catch (error) {}
-        }
-        
-        this.loadContinueReading();
-        this.showToast('Removido do histórico', 'success');
-    }
-
-    async clearHistory() {
-        if (!confirm('Limpar todo o histórico de leitura?')) return;
-
-        this.readingHistory = {};
-        this.saveUserDataToLocal();
-        
-        if (this.currentUser) {
-            try {
-                await database.ref(`users/${this.currentUser.uid}/history`).remove();
-            } catch (error) {}
-        }
-
-        this.loadContinueReading();
-        this.showToast('Histórico limpo!', 'success');
-    }
-
-    async toggleFavorite() {
-        if (!this.currentManhwa) return;
-        
-        const manhwaId = this.currentManhwa.id;
-        
-        if (this.favorites.has(manhwaId)) {
-            this.favorites.delete(manhwaId);
-            this.showToast('Removido dos favoritos', 'success');
+        if (tipo === 'todos') {
+            breadcrumbs.innerHTML = '<span class="active">Todas as Obras</span>';
         } else {
-            this.favorites.add(manhwaId);
-            this.showToast('Adicionado aos favoritos! ❤️', 'success');
+            breadcrumbs.innerHTML = `
+                <span onclick="userApp.resetTipo()" style="cursor: pointer; color: var(--text-secondary);">Todas as Obras</span>
+                <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: var(--text-muted);"></i>
+                <span class="active">${tipo}s</span>
+            `;
         }
+    },
 
-        this.saveUserDataToLocal();
-        this.updateBookmarkButton();
-
-        if (this.currentUser) {
-            try {
-                await database.ref(`users/${this.currentUser.uid}/favorites`).set(Array.from(this.favorites));
-            } catch (error) {}
-        }
-    }
-
-    updateBookmarkButton() {
-        const btn = document.getElementById('bookmarkBtn');
-        if (!btn || !this.currentManhwa) return;
+    resetTipo() {
+        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+        const todosBtn = document.querySelector('.type-btn[data-type="todos"]');
+        if (todosBtn) todosBtn.classList.add('active');
         
-        if (this.favorites.has(this.currentManhwa.id)) {
-            btn.classList.add('active');
-            btn.innerHTML = '♥';
-        } else {
-            btn.classList.remove('active');
-            btn.innerHTML = '♡';
-        }
-    }
+        this.state.filtros.tipo = 'todos';
+        this.state.paginacao.pagina = 1;
+        this.aplicarFiltros();
+        this.atualizarBreadcrumbs();
+    },
 
-    openManhwaModal(manhwa) {
-        this.currentManhwa = manhwa;
-        this.chapters = [];
-        this.modalChapters = [];
+    // Limpar todos os filtros
+    limparFiltros() {
+        this.state.filtros = {
+            tipo: 'todos',
+            generos: [],
+            autores: [],
+            status: ['Em andamento', 'Completo', 'Hiato'],
+            busca: ''
+        };
+        this.state.paginacao.pagina = 1;
+
+        // Reset UI
+        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+        const todosBtn = document.querySelector('.type-btn[data-type="todos"]');
+        if (todosBtn) todosBtn.classList.add('active');
         
-        if (manhwa.chapters) {
-            this.chapters = Object.entries(manhwa.chapters)
-                .map(([id, data]) => ({ id, ...data }))
-                .sort((a, b) => a.number - b.number);
-            
-            this.modalChapters = [...this.chapters].sort((a, b) => b.number - a.number);
+        document.querySelectorAll('.filter-checkbox input').forEach(cb => cb.checked = false);
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) searchInput.value = '';
+        
+        this.aplicarFiltros();
+        this.atualizarBreadcrumbs();
+    },
+
+    // ========== MODAL DA OBRA ==========
+
+    async openObraModal(obraId) {
+        const obra = this.state.obras.find(o => o.id === obraId);
+        if (!obra) return;
+
+        this.state.obraAtual = obra;
+        
+        // Título
+        const tituloEl = document.getElementById('modalObraTitulo');
+        if (tituloEl) tituloEl.textContent = obra.titulo;
+        
+        // Capa
+        const capaEl = document.getElementById('modalObraCapa');
+        if (capaEl) capaEl.src = obra.capa || 'https://placehold.co/300x450/1e1e1e/d32f2f?text=Sem+Capa';
+        
+        // Meta (tipo, status, gêneros)
+        const metaEl = document.getElementById('modalObraMeta');
+        if (metaEl) {
+            metaEl.innerHTML = `
+                <span class="obra-tipo">${obra.tipo}</span>
+                <span class="obra-status">${obra.status}</span>
+                ${obra.generos ? obra.generos.split(',').map(g => `<span class="obra-status" style="background: var(--bg-hover);">${g.trim()}</span>`).join('') : ''}
+            `;
         }
-
-        const typeLabels = {
-            'manga': 'Mangá', 'manhwa': 'Manhwa', 'manhua': 'Manhua',
-            'webtoon': 'Webtoon', 'novel': 'Novel'
-        };
-        const statusLabels = {
-            'ongoing': 'Em andamento', 'completed': 'Completo',
-            'hiatus': 'Hiato', 'cancelled': 'Cancelado'
-        };
-
-        const elements = {
-            title: document.getElementById('modalTitle'),
-            cover: document.getElementById('modalCover'),
-            backdrop: document.getElementById('modalBackdrop'),
-            synopsis: document.getElementById('modalSynopsis'),
-            type: document.getElementById('modalType'),
-            status: document.getElementById('modalStatus'),
-            demo: document.getElementById('modalDemo'),
-            author: document.getElementById('modalAuthor'),
-            year: document.getElementById('modalYear'),
-            chapters: document.getElementById('modalChapters'),
-            rating: document.getElementById('modalRating'),
-            views: document.getElementById('modalViews'),
-            updated: document.getElementById('modalUpdated')
-        };
-
-        if (elements.title) elements.title.textContent = manhwa.title || 'Sem título';
-        if (elements.cover) elements.cover.src = manhwa.coverUrl || '';
-        if (elements.backdrop) elements.backdrop.src = manhwa.coverUrl || '';
-        if (elements.synopsis) elements.synopsis.textContent = manhwa.description || 'Sem sinopse disponível.';
-        if (elements.type) elements.type.textContent = typeLabels[manhwa.type] || 'Obra';
-        if (elements.status) {
-            elements.status.textContent = statusLabels[manhwa.status] || 'Em andamento';
-            elements.status.className = `badge-status ${manhwa.status || 'ongoing'}`;
+        
+        // Autor
+        const autorEl = document.getElementById('modalObraAutor');
+        if (autorEl) {
+            autorEl.innerHTML = `
+                <i class="fas fa-user-circle"></i> Por <strong>${obra.autorNome || 'Autor desconhecido'}</strong>
+                <br><small>${obra.capitulos || 0} capítulos publicados</small>
+            `;
         }
-        if (elements.demo) {
-            elements.demo.textContent = manhwa.demographic ? manhwa.demographic.toUpperCase() : 'N/A';
-            elements.demo.style.display = manhwa.demographic ? 'inline-block' : 'none';
-        }
-        if (elements.author) elements.author.textContent = manhwa.author || 'Autor desconhecido';
-        if (elements.year) elements.year.textContent = manhwa.year || '2024';
-        if (elements.chapters) elements.chapters.textContent = `${this.modalChapters.length} capítulos`;
-        if (elements.rating) elements.rating.textContent = `⭐ ${manhwa.rating || 'N/A'}`;
-        if (elements.views) elements.views.textContent = `👁️ ${this.formatNumber(manhwa.views || 0)}`;
-        if (elements.updated) elements.updated.textContent = `📅 ${this.formatDate(manhwa.updatedAt)}`;
-
-        const tagsContainer = document.getElementById('modalTags');
-        if (tagsContainer) {
-            const genres = manhwa.genres || manhwa.genre || [];
-            tagsContainer.innerHTML = genres.map(g => `<span class="modal-tag">${this.getGenreLabel(g)}</span>`).join('');
-        }
-
-        const favBtn = document.getElementById('favoriteBtn');
-        if (favBtn) {
-            if (this.favorites.has(manhwa.id)) {
-                favBtn.classList.add('active');
-                favBtn.innerHTML = '♥';
+        
+        // Progresso do usuário
+        const progressoEl = document.getElementById('userProgress');
+        const progresso = this.getProgressoObra(obra.id);
+        
+        if (progressoEl) {
+            if (progresso && UserAuth.currentUser) {
+                progressoEl.classList.remove('hidden');
+                const fillEl = document.getElementById('progressFill');
+                const textEl = document.getElementById('progressText');
+                if (fillEl) fillEl.style.width = `${progresso.percentual}%`;
+                if (textEl) textEl.textContent = `${progresso.percentual}% lido - Cap. ${progresso.capituloNumero || '?'}`;
             } else {
-                favBtn.classList.remove('active');
-                favBtn.innerHTML = '♡';
+                progressoEl.classList.add('hidden');
             }
         }
 
-        const progress = this.readingHistory[manhwa.id];
-        const continueBtn = document.getElementById('continueReadingBtn');
-        
-        if (continueBtn) {
-            if (progress && manhwa.chapters?.[progress.chapterId]) {
-                continueBtn.innerHTML = `▶ Continuar ${manhwa.chapters[progress.chapterId].title}`;
-                continueBtn.style.display = 'flex';
+        // Botão continuar/ler
+        const btnContinuar = document.getElementById('btnContinuar');
+        const btnContinuarText = document.getElementById('btnContinuarText');
+        if (btnContinuar && btnContinuarText) {
+            if (progresso) {
+                btnContinuarText.textContent = 'Continuar Lendo';
             } else {
-                continueBtn.style.display = 'none';
+                btnContinuarText.textContent = 'Ler Agora';
             }
         }
-
-        this.renderChaptersList(this.modalChapters);
         
-        const modal = document.getElementById('manhwaModal');
+        // Botão favoritar
+        const btnFavoritar = document.getElementById('btnFavoritar');
+        const btnFavoritarText = document.getElementById('btnFavoritarText');
+        if (btnFavoritar && btnFavoritarText) {
+            const isFavorito = this.state.favoritos.includes(obraId);
+            if (isFavorito) {
+                btnFavoritar.innerHTML = '<i class="fas fa-heart"></i> <span id="btnFavoritarText">Favoritado</span>';
+            } else {
+                btnFavoritar.innerHTML = '<i class="far fa-heart"></i> <span id="btnFavoritarText">Favoritar</span>';
+            }
+        }
+        
+        // Sinopse
+        const sinopseEl = document.getElementById('modalObraSinopse');
+        if (sinopseEl) sinopseEl.textContent = obra.sinopse || 'Sem sinopse disponível.';
+        
+        // Carregar capítulos
+        await this.carregarCapitulos(obraId);
+        
+        // Mostrar modal
+        const modal = document.getElementById('obraModal');
         if (modal) {
             modal.classList.remove('hidden');
             document.body.style.overflow = 'hidden';
         }
-    }
+    },
 
-    closeManhwaModal() {
-        const modal = document.getElementById('manhwaModal');
-        if (modal) modal.classList.add('hidden');
-        document.body.style.overflow = '';
-    }
+    async carregarCapitulos(obraId) {
+        try {
+            const snapshot = await db.collection('capitulos')
+                .where('obraId', '==', obraId)
+                .orderBy('numero', 'desc')
+                .get();
 
-    renderChaptersList(chapters) {
-        const container = document.getElementById('chaptersList');
-        if (!container) return;
-        
-        container.innerHTML = '';
+            this.state.capitulos = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
 
-        if (chapters.length === 0) {
-            container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-secondary);">Nenhum capítulo disponível</div>';
-            return;
-        }
-
-        const progress = this.readingHistory[this.currentManhwa?.id];
-
-        chapters.forEach((chapter) => {
-            const isReading = progress?.chapterId === chapter.id;
-            const isNew = (Date.now() - (chapter.uploadedAt || 0)) < 7 * 24 * 60 * 60 * 1000;
+            const container = document.getElementById('modalCapitulosList');
+            if (!container) return;
             
-            const item = document.createElement('div');
-            item.className = `chapter-item ${isReading ? 'reading' : ''}`;
-            item.onclick = () => this.readChapterFromModal(chapter.id);
-            
-            item.innerHTML = `
-                <div class="chapter-number">${Math.floor(chapter.number)}</div>
-                <div class="chapter-info">
-                    <div class="chapter-title">${chapter.title}</div>
-                    <div class="chapter-meta">${chapter.pageCount || '?'} páginas • ${this.formatDate(chapter.uploadedAt)}</div>
+            if (!this.state.capitulos.length) {
+                container.innerHTML = '<p style="color: var(--text-muted); padding: 1rem;">Nenhum capítulo disponível.</p>';
+                return;
+            }
+
+            // Verificar qual capítulo está sendo lido
+            const progresso = this.getProgressoObra(obraId);
+            const capituloAtualId = progresso?.capituloId;
+
+            container.innerHTML = this.state.capitulos.map(cap => {
+                const isLido = progresso && cap.numero < progresso.capituloNumero;
+                const isAtual = cap.id === capituloAtualId;
+                
+                return `
+                <div class="capitulo-item ${isLido ? 'lido' : ''} ${isAtual ? 'atual' : ''}" 
+                     onclick="event.stopPropagation(); userApp.abrirCapitulo('${cap.id}')">
+                    <div class="capitulo-numero">Cap. ${cap.numero}</div>
+                    ${cap.titulo ? `<div style="font-size: 0.8rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis;">${cap.titulo}</div>` : ''}
+                    <div class="capitulo-data">${cap.paginas?.length || 0} pág.</div>
                 </div>
-                ${isReading ? '<span class="chapter-status">📖 Lendo</span>' : 
-                  isNew ? '<span class="chapter-status new">✨ Novo</span>' : ''}
-            `;
-            
-            container.appendChild(item);
-        });
-    }
+            `}).join('');
 
-    filterChapters() {
-        const query = document.getElementById('searchChapter')?.value.toLowerCase();
-        if (!query) {
-            this.renderChaptersList(this.modalChapters);
+        } catch (error) {
+            console.error('Erro ao carregar capítulos:', error);
+        }
+    },
+
+    closeObraModal() {
+        const modal = document.getElementById('obraModal');
+        if (modal) {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+        this.state.obraAtual = null;
+        this.state.capitulos = [];
+    },
+
+    // ========== LEITOR ==========
+
+    async abrirCapitulo(capituloId, paginaInicial = 0) {
+        const capitulo = this.state.capitulos.find(c => c.id === capituloId);
+        if (!capitulo || !capitulo.paginas?.length) {
+            this.showToast('Capítulo não disponível', 'error');
             return;
         }
+
+        // Verificar se há progresso salvo
+        const progresso = this.getProgressoObra(this.state.obraAtual.id);
+        if (progresso && progresso.capituloId === capituloId && paginaInicial === 0) {
+            paginaInicial = Math.max(0, progresso.pagina);
+        }
+
+        this.state.capituloAtual = capitulo;
+        this.state.paginaAtual = paginaInicial;
+
+        // Atualizar títulos
+        const tituloObra = document.getElementById('leitorObraTitulo');
+        const tituloCap = document.getElementById('leitorCapituloTitulo');
         
-        const filtered = this.modalChapters.filter(ch => 
-            ch.title.toLowerCase().includes(query) || 
-            ch.number.toString().includes(query)
+        if (tituloObra) tituloObra.textContent = this.state.obraAtual.titulo;
+        if (tituloCap) {
+            tituloCap.textContent = `Capítulo ${capitulo.numero} ${capitulo.titulo ? `- ${capitulo.titulo}` : ''}`;
+        }
+        
+        this.renderPaginaLeitor();
+        
+        // Configurar botão de próximo capítulo
+        const capAtualIndex = this.state.capitulos.findIndex(c => c.id === capituloId);
+        const proxCap = this.state.capitulos[capAtualIndex - 1];
+        const proxCapBar = document.querySelector('.leitor-capitulos-bar');
+        
+        if (proxCap && proxCapBar) {
+            const proxNumero = document.getElementById('proxCapNumero');
+            if (proxNumero) proxNumero.textContent = proxCap.numero;
+            proxCapBar.classList.remove('hidden');
+        } else if (proxCapBar) {
+            proxCapBar.classList.add('hidden');
+        }
+
+        // Mostrar leitor
+        const leitor = document.getElementById('leitorModal');
+        if (leitor) {
+            leitor.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        // Esconder modal da obra
+        const obraModal = document.getElementById('obraModal');
+        if (obraModal) obraModal.classList.add('hidden');
+
+        // Salvar progresso inicial
+        await this.salvarProgresso(
+            this.state.obraAtual.id,
+            capituloId,
+            paginaInicial,
+            capitulo.paginas.length,
+            capitulo.numero
         );
-        this.renderChaptersList(filtered);
-    }
+    },
 
-    sortChapters() {
-        const sort = document.getElementById('sortChapters')?.value;
-        let sorted = [...this.modalChapters];
+    async proximoCapitulo(proxCapId = null) {
+        if (!proxCapId) {
+            const capAtualIndex = this.state.capitulos.findIndex(c => c.id === this.state.capituloAtual.id);
+            const proxCap = this.state.capitulos[capAtualIndex - 1];
+            if (!proxCap) {
+                this.showToast('Este é o último capítulo', 'info');
+                return;
+            }
+            proxCapId = proxCap.id;
+        }
+
+        this.closeLeitor();
+        setTimeout(() => this.abrirCapitulo(proxCapId, 0), 100);
+    },
+
+    renderPaginaLeitor() {
+        const capitulo = this.state.capituloAtual;
+        const totalPaginas = capitulo.paginas.length;
+        const paginaAtual = this.state.paginaAtual;
         
-        if (sort === 'oldest') {
-            sorted.sort((a, b) => a.number - b.number);
+        // Atualizar indicadores
+        const pageInfo = document.getElementById('leitorPageInfo');
+        const progressBar = document.getElementById('leitorProgressBar');
+        const btnPrev = document.getElementById('btnPrevPage');
+        const btnNext = document.getElementById('btnNextPage');
+        
+        if (pageInfo) pageInfo.textContent = `${paginaAtual + 1} / ${totalPaginas}`;
+        if (progressBar) progressBar.style.width = `${((paginaAtual + 1) / totalPaginas) * 100}%`;
+        if (btnPrev) btnPrev.disabled = paginaAtual === 0;
+        if (btnNext) btnNext.disabled = paginaAtual === totalPaginas - 1;
+
+        // Renderizar imagem
+        const container = document.getElementById('leitorContent');
+        if (container) {
+            container.innerHTML = `
+                <img src="${capitulo.paginas[paginaAtual]}" 
+                     class="leitor-page" 
+                     alt="Página ${paginaAtual + 1}"
+                     onclick="userApp.nextPage()">
+            `;
+        }
+    },
+
+    async nextPage() {
+        if (!this.state.capituloAtual) return;
+
+        const totalPaginas = this.state.capituloAtual.paginas.length;
+        
+        if (this.state.paginaAtual < totalPaginas - 1) {
+            this.state.paginaAtual++;
+            this.renderPaginaLeitor();
+            
+            await this.salvarProgresso(
+                this.state.obraAtual.id,
+                this.state.capituloAtual.id,
+                this.state.paginaAtual,
+                totalPaginas,
+                this.state.capituloAtual.numero
+            );
         } else {
-            sorted.sort((a, b) => b.number - a.number);
+            this.proximoCapitulo();
         }
-        
-        this.renderChaptersList(sorted);
-    }
+    },
 
-    startReading() {
-        const progress = this.readingHistory[this.currentManhwa?.id];
-        if (progress) {
-            this.closeManhwaModal();
-            setTimeout(() => this.loadChapter(progress.chapterId), 300);
+    async prevPage() {
+        if (this.state.paginaAtual > 0) {
+            this.state.paginaAtual--;
+            this.renderPaginaLeitor();
+            
+            await this.salvarProgresso(
+                this.state.obraAtual.id,
+                this.state.capituloAtual.id,
+                this.state.paginaAtual,
+                this.state.capituloAtual.paginas.length,
+                this.state.capituloAtual.numero
+            );
         }
-    }
+    },
 
-    readFromBeginning() {
-        if (this.modalChapters.length > 0) {
-            const firstChapter = [...this.modalChapters].sort((a, b) => a.number - b.number)[0];
-            this.closeManhwaModal();
-            setTimeout(() => this.loadChapter(firstChapter.id), 300);
+    closeLeitor() {
+        const leitor = document.getElementById('leitorModal');
+        if (leitor) leitor.classList.add('hidden');
+        
+        document.body.style.overflow = '';
+        
+        // Reabrir modal da obra se estiver logado
+        if (UserAuth.currentUser && this.state.obraAtual) {
+            const obraModal = document.getElementById('obraModal');
+            if (obraModal) obraModal.classList.remove('hidden');
+            this.carregarCapitulos(this.state.obraAtual.id);
         }
-    }
+        
+        this.state.capituloAtual = null;
+        this.state.paginaAtual = 0;
+    },
 
-    readChapterFromModal(chapterId) {
-        if (!this.currentManhwa) {
-            this.showToast('Erro: Obra não encontrada', 'error');
-            return;
-        }
-        
-        if (!this.currentManhwa.chapters?.[chapterId]) {
-            this.showToast('Erro: Capítulo não encontrado', 'error');
-            return;
-        }
-        
-        this.closeManhwaModal();
-        setTimeout(() => this.loadChapter(chapterId), 350);
-    }
-
-    toggleModalFavorite() {
-        if (!this.currentManhwa) return;
-        
-        const btn = document.getElementById('favoriteBtn');
-        const manhwaId = this.currentManhwa.id;
-        
-        if (this.favorites.has(manhwaId)) {
-            this.favorites.delete(manhwaId);
-            btn?.classList.remove('active');
-            if (btn) btn.innerHTML = '♡';
-            this.showToast('Removido dos favoritos', 'success');
+    toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(e => console.log(e));
         } else {
-            this.favorites.add(manhwaId);
-            btn?.classList.add('active');
-            if (btn) btn.innerHTML = '♥';
-            this.showToast('Adicionado aos favoritos! ❤️', 'success');
+            document.exitFullscreen().catch(e => console.log(e));
         }
+    },
 
-        this.saveUserDataToLocal();
+    // ========== PROGRESSO E FAVORITOS ==========
 
-        if (this.currentUser) {
-            try {
-                database.ref(`users/${this.currentUser.uid}/favorites`).set(Array.from(this.favorites));
-            } catch (err) {}
+    async salvarProgresso(obraId, capituloId, pagina, totalPaginas, capituloNumero) {
+        if (!UserAuth.currentUser) return;
+
+        try {
+            const percentual = Math.round((pagina / totalPaginas) * 100);
+            
+            const progresso = {
+                capituloId: capituloId,
+                capituloNumero: capituloNumero,
+                pagina: pagina,
+                totalPaginas: totalPaginas,
+                percentual: percentual,
+                ultimaLeitura: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            await db.collection('userProgress')
+                .doc(UserAuth.currentUser.uid)
+                .collection('obras')
+                .doc(obraId)
+                .set(progresso);
+
+            this.state.progressoUsuario[obraId] = progresso;
+
+            await this.adicionarHistorico(obraId, capituloId, capituloNumero);
+
+        } catch (error) {
+            console.error('Erro ao salvar progresso:', error);
         }
-    }
+    },
 
-    loadChapter(chapterId) {
-        if (!this.currentManhwa) {
-            this.showToast('Erro: Obra não encontrada', 'error');
+    async adicionarHistorico(obraId, capituloId, capituloNumero) {
+        if (!UserAuth.currentUser) return;
+
+        const obra = this.state.obras.find(o => o.id === obraId);
+        if (!obra) return;
+
+        const historicoItem = {
+            obraId: obraId,
+            obraTitulo: obra.titulo,
+            obraCapa: obra.capa || '',
+            capituloId: capituloId,
+            capituloNumero: capituloNumero,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        try {
+            const docId = `${obraId}_${capituloId}`;
+            
+            await db.collection('userHistory')
+                .doc(UserAuth.currentUser.uid)
+                .collection('leituras')
+                .doc(docId)
+                .set(historicoItem);
+
+        } catch (error) {
+            console.error('Erro ao adicionar histórico:', error);
+        }
+    },
+
+    getProgressoObra(obraId) {
+        return this.state.progressoUsuario[obraId] || null;
+    },
+
+    async toggleFavorito() {
+        if (!UserAuth.currentUser) {
+            this.openAuthModal();
+            this.showToast('Faça login para favoritar obras', 'warning');
             return;
         }
+
+        if (!this.state.obraAtual) return;
+
+        const obraId = this.state.obraAtual.id;
+        const isFavorito = this.state.favoritos.includes(obraId);
+
+        try {
+            if (isFavorito) {
+                await db.collection('userFavorites')
+                    .doc(UserAuth.currentUser.uid)
+                    .collection('obras')
+                    .doc(obraId)
+                    .delete();
+                
+                this.state.favoritos = this.state.favoritos.filter(id => id !== obraId);
+                this.showToast('Removido dos favoritos', 'success');
+            } else {
+                await db.collection('userFavorites')
+                    .doc(UserAuth.currentUser.uid)
+                    .collection('obras')
+                    .doc(obraId)
+                    .set({
+                        obraId: obraId,
+                        titulo: this.state.obraAtual.titulo,
+                        capa: this.state.obraAtual.capa,
+                        adicionadoEm: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                
+                this.state.favoritos.push(obraId);
+                this.showToast('Adicionado aos favoritos!', 'success');
+            }
+
+            // Atualizar botão
+            const btnFavoritar = document.getElementById('btnFavoritar');
+            if (btnFavoritar) {
+                const newIsFavorito = !isFavorito;
+                btnFavoritar.innerHTML = newIsFavorito 
+                    ? '<i class="fas fa-heart"></i> <span id="btnFavoritarText">Favoritado</span>'
+                    : '<i class="far fa-heart"></i> <span id="btnFavoritarText">Favoritar</span>';
+            }
+
+        } catch (error) {
+            console.error('Erro ao favoritar:', error);
+            this.showToast('Erro ao favoritar', 'error');
+        }
+    },
+
+    // ========== AUTENTICAÇÃO UI ==========
+
+    updateUIAuth(isLogged) {
+        const guestActions = document.getElementById('guestActions');
+        const userActions = document.getElementById('userActions');
+        const userDisplayName = document.getElementById('userDisplayName');
+
+        if (guestActions) {
+            guestActions.classList.toggle('hidden', isLogged);
+        }
         
-        this.currentChapter = chapterId;
-        const chapter = this.currentManhwa.chapters[chapterId];
+        if (userActions) {
+            userActions.classList.toggle('hidden', !isLogged);
+        }
         
-        if (!chapter) {
-            this.showToast('Capítulo não encontrado!', 'error');
+        if (userDisplayName && UserAuth.currentUser) {
+            userDisplayName.textContent = UserAuth.userData?.nome || UserAuth.currentUser.displayName || 'Usuário';
+        }
+    },
+
+    openAuthModal() {
+        const modal = document.getElementById('authModal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+    },
+
+    closeAuthModal() {
+        const modal = document.getElementById('authModal');
+        if (modal) {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    },
+
+    switchAuthTab(tab) {
+        const loginForm = document.getElementById('loginForm');
+        const registerForm = document.getElementById('registerForm');
+        const tabs = document.querySelectorAll('.auth-tab');
+        
+        tabs.forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        
+        if (tab === 'login') {
+            if (loginForm) loginForm.classList.remove('hidden');
+            if (registerForm) registerForm.classList.add('hidden');
+        } else {
+            if (loginForm) loginForm.classList.add('hidden');
+            if (registerForm) registerForm.classList.remove('hidden');
+        }
+    },
+
+    toggleUserMenu() {
+        const dropdown = document.getElementById('userDropdown');
+        if (dropdown) {
+            dropdown.classList.toggle('hidden');
+        }
+    },
+
+    // ========== HANDLERS DE AUTH ==========
+
+    async handleLogin(e) {
+        e.preventDefault();
+        const email = document.getElementById('loginEmail')?.value;
+        const password = document.getElementById('loginPassword')?.value;
+
+        if (!email || !password) return;
+
+        const result = await UserAuth.login(email, password);
+        
+        if (result.success) {
+            this.closeAuthModal();
+            this.updateUIAuth(true);
+            await this.carregarDadosUsuario();
+            this.showToast('Login realizado!', 'success');
+            
+            if (this.state.obraAtual) {
+                this.openObraModal(this.state.obraAtual.id);
+            }
+        } else {
+            this.showToast(result.error, 'error');
+        }
+    },
+
+    async handleRegister(e) {
+        e.preventDefault();
+        const nome = document.getElementById('regName')?.value;
+        const email = document.getElementById('regEmail')?.value;
+        const password = document.getElementById('regPassword')?.value;
+
+        if (!nome || !email || !password) return;
+
+        const result = await UserAuth.register(email, password, nome);
+        
+        if (result.success) {
+            this.closeAuthModal();
+            this.updateUIAuth(true);
+            this.showToast('Conta criada!', 'success');
+        } else {
+            this.showToast(result.error, 'error');
+        }
+    },
+
+    async loginWithGoogle() {
+        const result = await UserAuth.loginWithGoogle();
+        
+        if (result.success) {
+            this.closeAuthModal();
+            this.updateUIAuth(true);
+            await this.carregarDadosUsuario();
+            this.showToast('Login com Google realizado!', 'success');
+        } else {
+            this.showToast(result.error, 'error');
+        }
+    },
+
+    async logout() {
+        await UserAuth.logout();
+        this.updateUIAuth(false);
+        
+        this.state.progressoUsuario = {};
+        this.state.favoritos = [];
+        this.state.historico = [];
+        
+        this.showToast('Logout realizado', 'success');
+        
+        const dropdown = document.getElementById('userDropdown');
+        if (dropdown) dropdown.classList.add('hidden');
+        
+        this.hideMinhasObras();
+        this.hideHistorico();
+    },
+
+    // ========== SEÇÕES DO USUÁRIO ==========
+
+    async showMinhasObras() {
+        if (!UserAuth.currentUser) {
+            this.openAuthModal();
             return;
         }
 
-        this.saveReadingProgress(this.currentManhwa.id, chapterId, 1);
+        const obrasComProgresso = Object.keys(this.state.progressoUsuario)
+            .map(obraId => {
+                const obra = this.state.obras.find(o => o.id === obraId);
+                if (!obra) return null;
+                
+                const progresso = this.state.progressoUsuario[obraId];
+                
+                return {
+                    ...obra,
+                    progresso: progresso
+                };
+            })
+            .filter(o => o !== null)
+            .sort((a, b) => (b.progresso.ultimaLeitura?.seconds || 0) - (a.progresso.ultimaLeitura?.seconds || 0));
 
-        document.getElementById('manhwaList')?.parentElement?.classList.add('hidden');
-        document.getElementById('continueReading')?.classList.add('hidden');
-        document.getElementById('reader')?.classList.remove('hidden');
-        document.getElementById('mainNav')?.classList.add('hidden');
-        
-        const chapterTitle = document.getElementById('chapterTitle');
-        const manhwaSubtitle = document.getElementById('manhwaSubtitle');
-        
-        if (chapterTitle) chapterTitle.textContent = chapter.title;
-        if (manhwaSubtitle) manhwaSubtitle.textContent = this.currentManhwa.title;
+        const obrasFavoritas = this.state.favoritos
+            .map(id => this.state.obras.find(o => o.id === id))
+            .filter(o => o !== undefined);
 
-        const select = document.getElementById('chapterSelect');
-        if (select) {
-            select.innerHTML = this.chapters.map(ch => `
-                <option value="${ch.id}" ${ch.id === chapterId ? 'selected' : ''}>
-                    ${ch.title}
-                </option>
+        const container = document.getElementById('minhasObrasGrid');
+        const placeholderUrl = 'https://placehold.co/300x450/1e1e1e/d32f2f?text=Sem+Capa';
+
+        let html = '';
+
+        if (obrasComProgresso.length > 0) {
+            html += `<h3 style="grid-column: 1/-1; margin: 1.5rem 0 1rem; color: var(--primary);"><i class="fas fa-book-open"></i> Continuar Lendo</h3>`;
+            
+            html += obrasComProgresso.map(obra => `
+                <div class="obra-card" onclick="userApp.continuarObra('${obra.id}')">
+                    <div style="position: relative;">
+                        <img src="${obra.capa || placeholderUrl}" class="obra-capa" loading="lazy">
+                        <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: var(--bg-hover);">
+                            <div style="width: ${obra.progresso.percentual}%; height: 100%; background: var(--primary);"></div>
+                        </div>
+                    </div>
+                    <div class="obra-info">
+                        <h3 class="obra-titulo">${obra.titulo}</h3>
+                        <div class="obra-meta">
+                            <span class="obra-tipo">${obra.tipo}</span>
+                            <span class="obra-status">Cap. ${obra.progresso.capituloNumero || '?'}</span>
+                        </div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">${obra.progresso.percentual}% lido</div>
+                    </div>
+                </div>
             `).join('');
         }
 
-        const container = document.getElementById('pagesContainer');
-        if (container) {
-            container.innerHTML = '';
-            if (chapter.pages?.length > 0) {
-                chapter.pages.forEach((page, index) => this.renderPage(page, index, container));
-            } else {
-                container.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--text-secondary);">Nenhuma página encontrada</div>';
-            }
+        if (obrasFavoritas.length > 0) {
+            html += `<h3 style="grid-column: 1/-1; margin: 1.5rem 0 1rem; color: var(--primary);"><i class="fas fa-heart"></i> Meus Favoritos</h3>`;
+            
+            html += obrasFavoritas.map(obra => `
+                <div class="obra-card" onclick="userApp.openObraModal('${obra.id}')">
+                    <img src="${obra.capa || placeholderUrl}" class="obra-capa" loading="lazy">
+                    <div class="obra-info">
+                        <h3 class="obra-titulo">${obra.titulo}</h3>
+                        <div class="obra-meta">
+                            <span class="obra-tipo">${obra.tipo}</span>
+                            <span class="obra-status">${obra.status}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
         }
 
-        window.scrollTo(0, 0);
-        this.updateNavButtons();
-        this.updateBookmarkButton();
-        this.updatePageIndicator(1, chapter.pages?.length || 1);
-    }
-
-    renderPage(page, index, container) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'page-wrapper';
-        
-        const img = document.createElement('img');
-        img.dataset.src = page.url;
-        img.alt = `Página ${index + 1}`;
-        img.className = 'page-image';
-        img.style.maxWidth = this.fitToScreen ? '100%' : 'none';
-
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    img.src = img.dataset.src;
-                    img.onload = () => img.classList.add('loaded');
-                    
-                    const totalPages = this.currentManhwa?.chapters?.[this.currentChapter]?.pages?.length || 1;
-                    this.updatePageIndicator(index + 1, totalPages);
-                    
-                    if (this.currentManhwa?.id && this.currentChapter) {
-                        this.saveReadingProgress(this.currentManhwa.id, this.currentChapter, index + 1);
-                    }
-                    
-                    observer.unobserve(entry.target);
-                }
-            });
-        }, { threshold: 0.1 });
-
-        observer.observe(wrapper);
-        wrapper.appendChild(img);
-        container.appendChild(wrapper);
-    }
-
-    updatePageIndicator(current, total) {
-        const indicator = document.getElementById('pageIndicator');
-        if (indicator) indicator.textContent = `${current} / ${total}`;
-    }
-
-    navigateChapter(direction) {
-        const currentIndex = this.chapters.findIndex(ch => ch.id === this.currentChapter);
-        const newIndex = currentIndex + direction;
-        
-        if (newIndex >= 0 && newIndex < this.chapters.length) {
-            this.loadChapter(this.chapters[newIndex].id);
-        } else if (newIndex < 0) {
-            this.showToast('Este é o primeiro capítulo!', 'error');
-        } else {
-            this.showToast('Você completou a obra! 🎉', 'success');
+        if (html === '') {
+            html = `
+                <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-muted);">
+                    <i class="fas fa-book" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                    <h3>Nenhuma obra ainda</h3>
+                    <p>Comece a ler para ver suas obras aqui!</p>
+                </div>
+            `;
         }
-    }
 
-    updateNavButtons() {
-        const currentIndex = this.chapters.findIndex(ch => ch.id === this.currentChapter);
-        const prevBtn = document.getElementById('prevChapter');
-        const nextBtn = document.getElementById('nextChapter');
+        if (container) container.innerHTML = html;
+
+        const section = document.getElementById('minhasObrasSection');
+        const mainLayout = document.getElementById('mainLayout');
         
-        if (prevBtn) prevBtn.disabled = currentIndex === 0;
-        if (nextBtn) nextBtn.disabled = currentIndex === this.chapters.length - 1;
-    }
-
-    showList() {
-        document.getElementById('reader')?.classList.add('hidden');
-        document.getElementById('manhwaList')?.parentElement?.classList.remove('hidden');
-        document.getElementById('mainNav')?.classList.remove('hidden');
+        if (section) section.classList.remove('hidden');
+        if (mainLayout) mainLayout.classList.add('hidden');
         
-        window.scrollTo(0, 0);
-        this.loadContinueReading();
-    }
+        const dropdown = document.getElementById('userDropdown');
+        if (dropdown) dropdown.classList.add('hidden');
+    },
 
-    searchManhwas(query) {
-        if (!query) {
-            this.applyFilters();
+    hideMinhasObras() {
+        const section = document.getElementById('minhasObrasSection');
+        const mainLayout = document.getElementById('mainLayout');
+        
+        if (section) section.classList.add('hidden');
+        if (mainLayout) mainLayout.classList.remove('hidden');
+    },
+
+    async showHistorico() {
+        if (!UserAuth.currentUser) {
+            this.openAuthModal();
             return;
         }
 
-        const lowerQuery = query.toLowerCase();
-        this.filteredManhwas = Object.values(this.allManhwas).filter(m => {
-            const titleMatch = (m.title || '').toLowerCase().includes(lowerQuery);
-            const authorMatch = (m.author || '').toLowerCase().includes(lowerQuery);
-            const genreMatch = (m.genres || m.genre || []).some(g => g.toLowerCase().includes(lowerQuery));
-            return titleMatch || authorMatch || genreMatch;
-        });
-
-        this.currentPage = 1;
-        this.sortObras(false);
-    }
-
-    toggleTheme() {
-        this.isLightMode = !this.isLightMode;
-        document.getElementById('reader')?.classList.toggle('light-mode', this.isLightMode);
-        document.getElementById('themeToggle')?.classList.toggle('active', this.isLightMode);
-    }
-
-    toggleFit() {
-        this.fitToScreen = !this.fitToScreen;
-        document.getElementById('fitToggle')?.classList.toggle('active', this.fitToScreen);
-        document.querySelectorAll('.page-image').forEach(img => {
-            img.style.maxWidth = this.fitToScreen ? '100%' : 'none';
-        });
-    }
-
-    setupScrollProgress() {
-        window.addEventListener('scroll', () => {
-            const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
-            const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-            const scrolled = (winScroll / height) * 100;
+        // Recarregar histórico
+        try {
+            const historicoSnapshot = await db.collection('userHistory')
+                .doc(UserAuth.currentUser.uid)
+                .collection('leituras')
+                .orderBy('timestamp', 'desc')
+                .limit(50)
+                .get();
             
-            const progressBar = document.getElementById('readingProgress');
-            if (progressBar) progressBar.style.width = scrolled + "%";
-        });
-    }
+            this.state.historico = historicoSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                timestamp: doc.data().timestamp?.toDate()
+            }));
+        } catch (error) {
+            console.error('Erro ao carregar histórico:', error);
+        }
 
-    showToast(message, type = 'success') {
-        const toast = document.getElementById('toast');
-        if (!toast) return;
+        const container = document.getElementById('historicoList');
+        const placeholderUrl = 'https://placehold.co/80x120/1e1e1e/d32f2f?text=Sem+Capa';
+
+        if (!this.state.historico.length) {
+            if (container) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                        <i class="fas fa-history" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                        <h3>Histórico vazio</h3>
+                        <p>Suas leituras aparecerão aqui</p>
+                    </div>
+                `;
+            }
+        } else {
+            if (container) {
+                container.innerHTML = this.state.historico.map(item => `
+                    <div class="historico-item" onclick="userApp.abrirDoHistorico('${item.obraId}', '${item.capituloId}')">
+                        <img src="${item.obraCapa || placeholderUrl}" class="historico-capa" loading="lazy">
+                        <div class="historico-info">
+                            <div class="historico-obra">${item.obraTitulo}</div>
+                            <div class="historico-capitulo">Capítulo ${item.capituloNumero}</div>
+                            <div class="historico-data"><i class="far fa-clock"></i> ${this.formatarData(item.timestamp)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        const section = document.getElementById('historicoSection');
+        const mainLayout = document.getElementById('mainLayout');
         
-        toast.textContent = message;
+        if (section) section.classList.remove('hidden');
+        if (mainLayout) mainLayout.classList.add('hidden');
+        
+        const dropdown = document.getElementById('userDropdown');
+        if (dropdown) dropdown.classList.add('hidden');
+    },
+
+    hideHistorico() {
+        const section = document.getElementById('historicoSection');
+        const mainLayout = document.getElementById('mainLayout');
+        
+        if (section) section.classList.add('hidden');
+        if (mainLayout) mainLayout.classList.remove('hidden');
+    },
+
+    formatarData(data) {
+        if (!data) return 'Recente';
+        const agora = new Date();
+        const diff = agora - data;
+        const minutos = Math.floor(diff / 60000);
+        const horas = Math.floor(diff / 3600000);
+        const dias = Math.floor(diff / 86400000);
+
+        if (minutos < 1) return 'Agora';
+        if (minutos < 60) return `${minutos} min atrás`;
+        if (horas < 24) return `${horas} h atrás`;
+        if (dias < 7) return `${dias} dias atrás`;
+        return data.toLocaleDateString();
+    },
+
+    // ========== UTILITÁRIOS ==========
+
+    continuarLendo() {
+        if (!this.state.obraAtual) return;
+
+        const progresso = this.getProgressoObra(this.state.obraAtual.id);
+        
+        if (progresso) {
+            this.abrirCapitulo(progresso.capituloId, progresso.pagina);
+        } else {
+            const primeiroCap = this.state.capitulos[this.state.capitulos.length - 1];
+            if (primeiroCap) {
+                this.abrirCapitulo(primeiroCap.id, 0);
+            } else {
+                this.showToast('Nenhum capítulo disponível', 'warning');
+            }
+        }
+    },
+
+    continuarObra(obraId) {
+        const obra = this.state.obras.find(o => o.id === obraId);
+        if (!obra) return;
+        
+        this.openObraModal(obraId);
+        setTimeout(() => this.continuarLendo(), 100);
+    },
+
+    abrirDoHistorico(obraId, capituloId) {
+        this.hideHistorico();
+        this.openObraModal(obraId);
+        setTimeout(() => this.abrirCapitulo(capituloId), 100);
+    },
+
+    scrollToTop() {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    showLoading(show) {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.classList.toggle('hidden', !show);
+    },
+
+    showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        if (!container) return;
+
+        const toast = document.createElement('div');
         toast.className = `toast ${type}`;
         
-        requestAnimationFrame(() => toast.classList.add('show'));
-        setTimeout(() => toast.classList.remove('show'), 3000);
-    }
+        const icons = {
+            success: 'fa-check-circle',
+            error: 'fa-exclamation-circle',
+            warning: 'fa-exclamation-triangle',
+            info: 'fa-info-circle'
+        };
 
-    showProfile() {
-        this.showToast('Perfil em desenvolvimento! 👤', 'success');
-    }
+        toast.innerHTML = `
+            <i class="fas ${icons[type]}"></i>
+            <span>${message}</span>
+        `;
 
-    showFavorites() {
-        const favoriteIds = Array.from(this.favorites);
-        this.filteredManhwas = favoriteIds.map(id => this.allManhwas[id]).filter(Boolean);
-        this.currentPage = 1;
-        this.renderGrid();
-        
-        const titleEl = document.getElementById('sectionTitle');
-        if (titleEl) titleEl.textContent = '♡ Meus Favoritos';
-        
-        this.showToast(`Mostrando ${this.filteredManhwas.length} favoritos! ❤️`, 'success');
-    }
+        container.appendChild(toast);
 
-    formatNumber(num) {
-        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-        return num.toString();
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }
+};
 
-    formatDate(timestamp) {
-        if (!timestamp) return 'N/A';
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diff = now - date;
-        
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        if (days === 0) return 'Hoje';
-        if (days === 1) return 'Ontem';
-        if (days < 7) return `${days} dias atrás`;
-        if (days < 30) return `${Math.floor(days / 7)} semanas atrás`;
-        
-        return date.toLocaleDateString('pt-BR');
+// Inicialização quando DOM estiver pronto
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing app...');
+    
+    // Bind dos forms de auth
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    
+    if (loginForm) {
+        loginForm.addEventListener('submit', (e) => userApp.handleLogin(e));
     }
-}
-
-// Inicializar app
-window.app = new ManhwaReader();
+    
+    if (registerForm) {
+        registerForm.addEventListener('submit', (e) => userApp.handleRegister(e));
+    }
+    
+    // Iniciar app
+    userApp.init();
+});
